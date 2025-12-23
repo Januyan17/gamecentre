@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "712250752924",
+    "project_id": "gaming-center-staff",
+    "storage_bucket": "gaming-center-staff.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:712250752924:android:93bd7af8298ce769ae1259",
+        "android_client_info": {
+          "package_name": "com.company.rowzow"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQVlVBDhQnkZ2HymiqEC6a20CObNei1RY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

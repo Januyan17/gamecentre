@@ -1,0 +1,731 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:rowzow/core/services/firebase_service.dart';
+import 'package:rowzow/core/services/session_service.dart';
+import 'package:rowzow/core/services/price_calculator.dart';
+
+class HistoryPage extends StatefulWidget {
+  const HistoryPage({super.key});
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  DateTime selectedDate = DateTime.now();
+  final SessionService _sessionService = SessionService();
+  final FirebaseService _fs = FirebaseService();
+
+  @override
+  Widget build(BuildContext context) {
+    final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('History'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today),
+            onPressed: _pickDate,
+            tooltip: 'Select Date',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Date selector
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Date: ${DateFormat('MMM dd, yyyy').format(selectedDate)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.edit_calendar),
+                  label: const Text('Change'),
+                ),
+              ],
+            ),
+          ),
+
+          // History list
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _fs.historySessionsRef(dateId).snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.history,
+                          size: 64,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No sessions found for this date',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(8),
+                  itemCount: snapshot.data!.docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = snapshot.data!.docs[index];
+                    final data = doc.data() as Map<String, dynamic>;
+                    return _buildSessionCard(doc.id, data, dateId);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionCard(
+    String sessionId,
+    Map<String, dynamic> data,
+    String dateId,
+  ) {
+    final customerName = data['customerName'] ?? 'Unknown';
+    final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+    final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
+    final startTime = data['startTime'] as Timestamp?;
+    final endTime = data['endTime'] as Timestamp?;
+
+    String timeInfo = '';
+    if (startTime != null) {
+      timeInfo = DateFormat('hh:mm a').format(startTime.toDate());
+      if (endTime != null) {
+        timeInfo += ' - ${DateFormat('hh:mm a').format(endTime.toDate())}';
+      }
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      elevation: 2,
+      child: ExpansionTile(
+        leading: CircleAvatar(
+          backgroundColor: Colors.blue,
+          child: Text(
+            customerName[0].toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        title: Text(
+          customerName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Total: Rs ${totalAmount.toStringAsFixed(2)}'),
+            if (timeInfo.isNotEmpty)
+              Text(
+                timeInfo,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue),
+              onPressed: () => _editSession(sessionId, data, dateId),
+              tooltip: 'Edit',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed:
+                  () => _deleteSession(
+                    sessionId,
+                    totalAmount,
+                    dateId,
+                    customerName,
+                  ),
+              tooltip: 'Delete',
+            ),
+          ],
+        ),
+        children: [
+          if (services.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'No services in this session',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            ...services.map((service) {
+              final type = service['type'] ?? 'Unknown';
+              final price = (service['price'] ?? 0).toDouble();
+              String subtitle = 'Rs ${price.toStringAsFixed(2)}';
+
+              final multiplayer = service['multiplayer'] ?? false;
+              if (service['hours'] != null && service['minutes'] != null) {
+                subtitle =
+                    '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+              } else if (service['duration'] != null) {
+                subtitle =
+                    '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
+              }
+
+              return ListTile(
+                dense: true,
+                leading: Icon(
+                  type == 'PS5' ? Icons.sports_esports : Icons.videogame_asset,
+                  color: type == 'PS5' ? Colors.blue : Colors.purple,
+                ),
+                title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
+                subtitle: Text(subtitle),
+              );
+            }).toList(),
+        ],
+      ),
+    );
+  }
+
+  void _editSession(
+    String sessionId,
+    Map<String, dynamic> data,
+    String dateId,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => _EditHistorySessionDialog(
+            sessionId: sessionId,
+            data: data,
+            dateId: dateId,
+            onUpdated: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Session updated successfully')),
+              );
+            },
+          ),
+    );
+  }
+
+  void _deleteSession(
+    String sessionId,
+    double amount,
+    String dateId,
+    String customerName,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Session'),
+            content: Text(
+              'Are you sure you want to delete this session?\n\n'
+              'Customer: $customerName\n'
+              'Amount: Rs ${amount.toStringAsFixed(2)}\n\n'
+              'This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  await _sessionService.deleteHistorySession(
+                    dateId,
+                    sessionId,
+                    amount,
+                  );
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Session deleted successfully'),
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() => selectedDate = picked);
+    }
+  }
+}
+
+class _EditHistorySessionDialog extends StatefulWidget {
+  final String sessionId;
+  final Map<String, dynamic> data;
+  final String dateId;
+  final VoidCallback onUpdated;
+
+  const _EditHistorySessionDialog({
+    required this.sessionId,
+    required this.data,
+    required this.dateId,
+    required this.onUpdated,
+  });
+
+  @override
+  State<_EditHistorySessionDialog> createState() =>
+      _EditHistorySessionDialogState();
+}
+
+class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
+  late TextEditingController _nameController;
+  late List<Map<String, dynamic>> _services;
+  final SessionService _sessionService = SessionService();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(
+      text: widget.data['customerName'] ?? '',
+    );
+    _services = List<Map<String, dynamic>>.from(widget.data['services'] ?? []);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _editService(int index) {
+    final service = _services[index];
+    if (service['type'] == 'PS4' || service['type'] == 'PS5') {
+      showDialog(
+        context: context,
+        builder:
+            (context) => _EditServiceTimeDialog(
+              service: service,
+              onConfirm: (updated) {
+                setState(() {
+                  _services[index] = updated;
+                  _recalculateTotal();
+                });
+                Navigator.pop(context);
+              },
+            ),
+      );
+    }
+  }
+
+  void _deleteService(int index) {
+    setState(() {
+      _services.removeAt(index);
+      _recalculateTotal();
+    });
+  }
+
+  void _recalculateTotal() {
+    setState(() {});
+  }
+
+  double _getTotal() {
+    return _services.fold<double>(
+      0,
+      (sum, service) => sum + (service['price'] as num).toDouble(),
+    );
+  }
+
+  Future<void> _save() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter customer name')),
+      );
+      return;
+    }
+
+    final total = _getTotal();
+    await _sessionService
+        .updateHistorySession(widget.dateId, widget.sessionId, {
+          'customerName': _nameController.text.trim(),
+          'services': _services,
+          'totalAmount': total,
+        });
+
+    // Update day totals
+    final oldTotal = (widget.data['totalAmount'] ?? 0).toDouble();
+    final diff = total - oldTotal;
+
+    if (diff != 0) {
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final dayRef = FirebaseFirestore.instance
+            .collection('days')
+            .doc(widget.dateId);
+
+        final dayDoc = await tx.get(dayRef);
+        if (dayDoc.exists) {
+          final dayData = dayDoc.data();
+          final currentTotal =
+              ((dayData as Map<String, dynamic>)?['totalAmount'] ?? 0)
+                  .toDouble();
+          tx.update(dayRef, {
+            'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity),
+          });
+        }
+      });
+    }
+
+    widget.onUpdated();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Session'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Customer Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Services:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (_services.isEmpty)
+              const Text('No services', style: TextStyle(color: Colors.grey))
+            else
+              ...List.generate(_services.length, (index) {
+                final service = _services[index];
+                final type = service['type'] ?? 'Unknown';
+                final price = (service['price'] ?? 0).toDouble();
+                final multiplayer = service['multiplayer'] ?? false;
+                String subtitle = 'Rs ${price.toStringAsFixed(2)}';
+
+                if (service['hours'] != null && service['minutes'] != null) {
+                  subtitle =
+                      '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                }
+
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListTile(
+                    title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
+                    subtitle: Text(subtitle),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (type == 'PS4' || type == 'PS5')
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 20),
+                            onPressed: () => _editService(index),
+                          ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete,
+                            size: 20,
+                            color: Colors.red,
+                          ),
+                          onPressed: () => _deleteService(index),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Total:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    'Rs ${_getTotal().toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
+class _EditServiceTimeDialog extends StatefulWidget {
+  final Map<String, dynamic> service;
+  final Function(Map<String, dynamic>) onConfirm;
+
+  const _EditServiceTimeDialog({
+    required this.service,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_EditServiceTimeDialog> createState() => _EditServiceTimeDialogState();
+}
+
+class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
+  late int hours;
+  late int minutes;
+  late bool multiplayer;
+  double price = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    hours = widget.service['hours'] ?? 0;
+    minutes = widget.service['minutes'] ?? 0;
+    multiplayer = widget.service['multiplayer'] ?? false;
+    _calculatePrice();
+  }
+
+  void _calculatePrice() {
+    if (widget.service['type'] == 'PS4') {
+      price = PriceCalculator.ps4Price(
+        hours: hours,
+        minutes: minutes,
+        multiplayer: multiplayer,
+      );
+    } else if (widget.service['type'] == 'PS5') {
+      price = PriceCalculator.ps5Price(
+        hours: hours,
+        minutes: minutes,
+        multiplayer: multiplayer,
+      );
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Edit ${widget.service['type']}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Column(
+                children: [
+                  const Text('Hours', style: TextStyle(fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (hours > 0) {
+                            setState(() {
+                              hours--;
+                              _calculatePrice();
+                            });
+                          }
+                        },
+                      ),
+                      Text(
+                        '$hours',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: () {
+                          setState(() {
+                            hours++;
+                            _calculatePrice();
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Column(
+                children: [
+                  const Text('Minutes', style: TextStyle(fontSize: 16)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (minutes > 0) {
+                            setState(() {
+                              minutes -= 15;
+                              if (minutes < 0) minutes = 0;
+                              _calculatePrice();
+                            });
+                          }
+                        },
+                      ),
+                      Text(
+                        '$minutes',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed: () {
+                          setState(() {
+                            minutes += 15;
+                            if (minutes >= 60) {
+                              hours += minutes ~/ 60;
+                              minutes = minutes % 60;
+                            }
+                            _calculatePrice();
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Multiplayer toggle
+          SwitchListTile(
+            title: const Text('Multiplayer (+Rs 150)'),
+            subtitle: const Text('Add extra console for multiplayer'),
+            value: multiplayer,
+            onChanged: (value) {
+              setState(() {
+                multiplayer = value;
+                _calculatePrice();
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Total Time: ${hours}h ${minutes}m',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                if (multiplayer)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Multiplayer: +Rs 150',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'Price: Rs ${price.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed:
+              (hours == 0 && minutes == 0)
+                  ? null
+                  : () {
+                    widget.onConfirm({
+                      ...widget.service,
+                      'hours': hours,
+                      'minutes': minutes,
+                      'price': price,
+                      'multiplayer': multiplayer,
+                    });
+                  },
+          child: const Text('Update'),
+        ),
+      ],
+    );
+  }
+}
