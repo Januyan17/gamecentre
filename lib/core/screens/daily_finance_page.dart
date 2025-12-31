@@ -1,0 +1,628 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
+class DailyFinancePage extends StatefulWidget {
+  const DailyFinancePage({super.key});
+
+  @override
+  State<DailyFinancePage> createState() => _DailyFinancePageState();
+}
+
+class _DailyFinancePageState extends State<DailyFinancePage> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final TextEditingController _expenseController = TextEditingController();
+  final TextEditingController _expenseNoteController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  
+  DateTime _selectedDate = DateTime.now();
+  double _dailyIncome = 0.0;
+  double _totalExpenses = 0.0;
+  List<Map<String, dynamic>> _expenses = [];
+  bool _isLoading = false;
+  bool _isSaving = false;
+  bool _isSaved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDailyData();
+  }
+
+  @override
+  void dispose() {
+    _expenseController.dispose();
+    _expenseNoteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDailyData() async {
+    setState(() => _isLoading = true);
+    try {
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      
+      // Load income from day's total
+      final dayDoc = await _firestore.collection('days').doc(dateId).get();
+      if (dayDoc.exists) {
+        final data = dayDoc.data();
+        _dailyIncome = (data?['totalAmount'] ?? 0).toDouble();
+      }
+
+      // Load expenses and saved finance record
+      final financeDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+      if (financeDoc.exists) {
+        final data = financeDoc.data();
+        if (data != null) {
+          final expensesList = data['expenses'];
+          _expenses = [];
+          
+          if (expensesList != null && expensesList is List) {
+            for (var expense in expensesList) {
+              if (expense is Map) {
+                final expenseMap = Map<String, dynamic>.from(expense);
+                // Ensure timestamp is properly converted from Firestore
+                if (expenseMap['timestamp'] != null) {
+                  if (expenseMap['timestamp'] is Timestamp) {
+                    // Already a Timestamp, keep it
+                  } else if (expenseMap['timestamp'] is Map) {
+                    // Convert Firestore Timestamp map to Timestamp object
+                    try {
+                      final tsMap = expenseMap['timestamp'] as Map;
+                      if (tsMap.containsKey('_seconds')) {
+                        expenseMap['timestamp'] = Timestamp(
+                          tsMap['_seconds'] as int,
+                          (tsMap['_nanoseconds'] ?? 0) as int,
+                        );
+                      } else {
+                        expenseMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                      }
+                    } catch (e) {
+                      expenseMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                    }
+                  } else {
+                    // Convert to Timestamp if it's something else
+                    expenseMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                  }
+                } else {
+                  expenseMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                }
+                _expenses.add(expenseMap);
+              }
+            }
+          }
+          
+          _totalExpenses = _expenses.fold<double>(
+            0.0,
+            (sum, expense) => sum + (expense['amount'] as num).toDouble(),
+          );
+          _isSaved = data['isSaved'] ?? false;
+        } else {
+          _expenses = [];
+          _totalExpenses = 0.0;
+          _isSaved = false;
+        }
+      } else {
+        _expenses = [];
+        _totalExpenses = 0.0;
+        _isSaved = false;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading data: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatExpenseTimestamp(dynamic timestamp) {
+    try {
+      if (timestamp == null) {
+        return DateFormat('hh:mm a').format(DateTime.now());
+      }
+      if (timestamp is Timestamp) {
+        return DateFormat('hh:mm a').format(timestamp.toDate());
+      }
+      if (timestamp is DateTime) {
+        return DateFormat('hh:mm a').format(timestamp);
+      }
+      return DateFormat('hh:mm a').format(DateTime.now());
+    } catch (e) {
+      return DateFormat('hh:mm a').format(DateTime.now());
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() => _selectedDate = picked);
+      _loadDailyData();
+    }
+  }
+
+  void _addExpense() {
+    if (_formKey.currentState!.validate()) {
+      final amount = double.parse(_expenseController.text);
+      final note = _expenseNoteController.text.trim();
+      
+      setState(() {
+        _expenses.add({
+          'amount': amount,
+          'note': note.isEmpty ? 'Expense' : note,
+          'timestamp': Timestamp.fromDate(DateTime.now()),
+        });
+        _totalExpenses += amount;
+        _expenseController.clear();
+        _expenseNoteController.clear();
+      });
+    }
+  }
+
+  void _removeExpense(int index) {
+    setState(() {
+      _totalExpenses -= (_expenses[index]['amount'] as num).toDouble();
+      _expenses.removeAt(index);
+    });
+  }
+
+  Future<void> _saveFinance() async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save Finance'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Income:'),
+                Text(
+                  'Rs ${_dailyIncome.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total Expenses:'),
+                Text(
+                  'Rs ${_totalExpenses.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Net Profit:'),
+                Text(
+                  'Rs ${(_dailyIncome - _totalExpenses).toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: (_dailyIncome - _totalExpenses) >= 0 ? Colors.blue : Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_isSaved)
+              const Text(
+                '⚠ This will update the existing finance record for this date.',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+              )
+            else
+              const Text(
+                'Are you sure you want to save this finance data?',
+                style: TextStyle(fontSize: 14),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(_isSaved ? 'Update' : 'Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) {
+      return; // User cancelled
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final netProfit = _dailyIncome - _totalExpenses;
+
+      // Convert expenses to Firestore format (ensure timestamps are proper)
+      final expensesForFirestore = _expenses.map((expense) {
+        final expenseMap = Map<String, dynamic>.from(expense);
+        // Ensure timestamp is properly formatted
+        if (expenseMap['timestamp'] is Timestamp) {
+          expenseMap['timestamp'] = expenseMap['timestamp'];
+        } else if (expenseMap['timestamp'] is DateTime) {
+          expenseMap['timestamp'] = Timestamp.fromDate(expenseMap['timestamp'] as DateTime);
+        }
+        return expenseMap;
+      }).toList();
+
+      // Save finance data with date as document ID (ensures one record per date)
+      await _firestore.collection('daily_finance').doc(dateId).set({
+        'date': dateId,
+        'dateTimestamp': Timestamp.fromDate(DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+        )),
+        'income': _dailyIncome,
+        'expenses': expensesForFirestore,
+        'totalExpenses': _totalExpenses,
+        'netProfit': netProfit,
+        'isSaved': true,
+        'savedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      setState(() => _isSaved = true);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _isSaved ? 'Finance data updated successfully' : 'Finance data saved successfully',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving finance: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final netProfit = _dailyIncome - _totalExpenses;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Daily Finance'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today),
+            onPressed: _pickDate,
+            tooltip: 'Select Date',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Date selector
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _pickDate,
+                              icon: const Icon(Icons.edit_calendar),
+                              label: const Text('Change'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Income Card
+                    Card(
+                      color: Colors.green.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Daily Income (From App)',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Rs ${_dailyIncome.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Add Expense Section
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Add Expense',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _expenseController,
+                              decoration: const InputDecoration(
+                                labelText: 'Expense Amount (Rs)',
+                                border: OutlineInputBorder(),
+                                prefixText: 'Rs ',
+                              ),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter amount';
+                                }
+                                final amount = double.tryParse(value);
+                                if (amount == null || amount <= 0) {
+                                  return 'Please enter valid amount';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _expenseNoteController,
+                              decoration: const InputDecoration(
+                                labelText: 'Expense Note (Optional)',
+                                border: OutlineInputBorder(),
+                                hintText: 'e.g., Electricity, Rent, Supplies',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _addExpense,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Add Expense'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Expenses List
+                    if (_expenses.isNotEmpty) ...[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Expenses List',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ...List.generate(_expenses.length, (index) {
+                                final expense = _expenses[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    title: Text(expense['note'] ?? 'Expense'),
+                                    subtitle: Text(
+                                      _formatExpenseTimestamp(expense['timestamp']),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Rs ${(expense['amount'] as num).toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                          onPressed: () => _removeExpense(index),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Total Expenses Card
+                    Card(
+                      color: Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Total Expenses',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Rs ${_totalExpenses.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Net Profit Card
+                    Card(
+                      color: netProfit >= 0 ? Colors.blue.shade50 : Colors.orange.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Net Profit',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Rs ${netProfit.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: netProfit >= 0 ? Colors.blue : Colors.orange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Save Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isSaving ? null : _saveFinance,
+                        icon: _isSaving
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.save),
+                        label: Text(_isSaved ? 'Update Finance' : 'Save Finance'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: _isSaved ? Colors.orange : Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (_isSaved)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Center(
+                          child: Text(
+                            '✓ Saved on ${DateFormat('MMM dd, yyyy hh:mm a').format(_selectedDate)}',
+                            style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+}
+

@@ -101,7 +101,8 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _buildSessionCard(String sessionId, Map<String, dynamic> data, String dateId) {
     final customerName = data['customerName'] ?? 'Unknown';
-    final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+    // Use finalAmount if discount exists, otherwise use totalAmount
+    final totalAmount = (data['finalAmount'] ?? data['totalAmount'] ?? 0).toDouble();
     final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
     final startTime = data['startTime'] as Timestamp?;
     final endTime = data['endTime'] as Timestamp?;
@@ -222,28 +223,121 @@ class _HistoryPageState extends State<HistoryPage> {
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: const Text('Delete Session'),
             content: Text(
               'Are you sure you want to delete this session?\n\n'
               'Customer: $customerName\n'
               'Amount: Rs ${amount.toStringAsFixed(2)}\n\n'
-              'This action cannot be undone.',
+              'This action cannot be undone. The session will be permanently deleted.',
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
               ElevatedButton(
                 onPressed: () async {
-                  await _sessionService.deleteHistorySession(dateId, sessionId, amount);
-                  if (mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('Session deleted successfully')));
+                  Navigator.pop(dialogContext); // Close confirmation dialog
+
+                  // Store the navigator before async operations
+                  final navigator = Navigator.of(context, rootNavigator: true);
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+                  // Show loading
+                  if (!context.mounted) return;
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder:
+                        (loadingContext) => PopScope(
+                          canPop: false,
+                          child: const Center(child: CircularProgressIndicator()),
+                        ),
+                  );
+
+                  try {
+                    await _sessionService.deleteHistorySession(dateId, sessionId, amount);
+
+                    // Wait a bit to ensure Firestore updates
+                    await Future.delayed(const Duration(milliseconds: 500));
+
+                    // Close loading dialog using root navigator
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Wait a bit for the loading dialog to fully close before showing snackbar
+                    await Future.delayed(const Duration(milliseconds: 200));
+
+                    // Show success message
+                    if (context.mounted) {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.white),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Session deleted successfully',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 3),
+                          behavior: SnackBarBehavior.floating,
+                          margin: const EdgeInsets.all(16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    // Close loading dialog using root navigator
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Wait a bit for the loading dialog to fully close before showing snackbar
+                    await Future.delayed(const Duration(milliseconds: 200));
+
+                    if (context.mounted) {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              const Icon(Icons.error, color: Colors.white),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Error deleting session: ${e.toString()}',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
+                          behavior: SnackBarBehavior.floating,
+                          margin: const EdgeInsets.all(16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      );
+                    }
                   }
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Delete'),
+                child: const Text('Delete', style: TextStyle(color: Colors.white)),
               ),
             ],
           ),

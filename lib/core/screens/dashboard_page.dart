@@ -8,6 +8,8 @@ import 'create_session_page.dart';
 import 'session_detail_page.dart';
 import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
+import 'daily_finance_page.dart';
+import 'finance_history_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -418,32 +420,74 @@ class DashboardPage extends StatelessWidget {
               // Action Buttons
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const CreateSessionPage()),
-                          );
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('New Session'),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const CreateSessionPage()),
+                              );
+                            },
+                            icon: const Icon(Icons.add),
+                            label: const Text('New Session'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const HistoryPage()),
+                              );
+                            },
+                            icon: const Icon(Icons.history),
+                            label: const Text('History'),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const HistoryPage()),
-                          );
-                        },
-                        icon: const Icon(Icons.history),
-                        label: const Text('History'),
-                      ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const DailyFinancePage()),
+                              );
+                            },
+                            icon: const Icon(Icons.account_balance_wallet),
+                            label: const Text('Daily Finance'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const FinanceHistoryPage()),
+                              );
+                            },
+                            icon: const Icon(Icons.timeline),
+                            label: const Text('Finance History'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
