@@ -132,11 +132,85 @@ class DailyResetService {
       // by admin with correct password via PricingSettingsPage.
       // Daily reset only moves sessions to history - it does NOT touch pricing settings.
 
+      // Auto-preserve finance for yesterday if it doesn't exist
+      // This ensures no day's finance data is lost even if admin forgets to save
+      await _autoPreserveFinanceForDate(yesterdayId);
+
       // Don't initialize today's day document - let admin manage amounts manually
       // The day document will be created when sessions are closed or manually by admin
     } catch (e) {
       // Log error but don't crash the app
       print('Error in daily reset: $e');
+    }
+  }
+
+  /// Auto-preserve finance for a date if it doesn't exist
+  /// This ensures income is preserved even if admin forgets to save finance
+  Future<void> _autoPreserveFinanceForDate(String dateId) async {
+    try {
+      // Check if finance record already exists for this date
+      final financeDoc =
+          await _firestore.collection('daily_finance').doc(dateId).get();
+      if (financeDoc.exists) {
+        // Finance already saved, no need to auto-preserve
+        return;
+      }
+
+      // Calculate income from closed sessions for this date
+      double totalIncome = 0.0;
+      final sessionsSnapshot =
+          await _firestore
+              .collection('days')
+              .doc(dateId)
+              .collection('sessions')
+              .get();
+
+      for (var doc in sessionsSnapshot.docs) {
+        final sessionData = doc.data();
+        final amount =
+            (sessionData['finalAmount'] ?? sessionData['totalAmount'] ?? 0)
+                .toDouble();
+        totalIncome += amount;
+      }
+
+      // Also check day's total as backup
+      final dayDoc = await _firestore.collection('days').doc(dateId).get();
+      if (dayDoc.exists) {
+        final dayData = dayDoc.data();
+        final dayTotal = (dayData?['totalAmount'] ?? 0).toDouble();
+        if (dayTotal > totalIncome) {
+          totalIncome = dayTotal;
+        }
+      }
+
+      // Only create auto-preserved record if there's income
+      if (totalIncome > 0) {
+        // Parse date from dateId
+        final dateParts = dateId.split('-');
+        final date = DateTime(
+          int.parse(dateParts[0]),
+          int.parse(dateParts[1]),
+          int.parse(dateParts[2]),
+        );
+
+        // Create auto-preserved finance record
+        await _firestore.collection('daily_finance').doc(dateId).set({
+          'date': dateId,
+          'dateTimestamp': Timestamp.fromDate(date),
+          'income': totalIncome,
+          'expenses': [],
+          'totalExpenses': 0.0,
+          'netProfit': totalIncome,
+          'isSaved': false, // Mark as not manually saved
+          'autoPreserved': true, // Mark as auto-preserved
+          'autoPreservedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        print('Auto-preserved finance for $dateId with income: $totalIncome');
+      }
+    } catch (e) {
+      print('Error auto-preserving finance for $dateId: $e');
+      // Don't throw - this is a background operation
     }
   }
 

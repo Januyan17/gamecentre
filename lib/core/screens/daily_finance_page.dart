@@ -22,6 +22,9 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
   bool _isLoading = false;
   bool _isSaving = false;
   bool _isSaved = false;
+  bool _autoPreserved = false;
+  Timestamp? _savedAt;
+  Timestamp? _updatedAt;
 
   @override
   void initState() {
@@ -41,11 +44,18 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
     try {
       final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
       
-      // Load income from day's total
+      // Calculate income from all closed sessions for this date (from history)
+      await _calculateIncomeFromSessions(dateId);
+      
+      // Also check day's total as backup (for backward compatibility)
       final dayDoc = await _firestore.collection('days').doc(dateId).get();
       if (dayDoc.exists) {
         final data = dayDoc.data();
-        _dailyIncome = (data?['totalAmount'] ?? 0).toDouble();
+        final dayTotal = (data?['totalAmount'] ?? 0).toDouble();
+        // Use the higher value (in case sessions were added after finance was saved)
+        if (dayTotal > _dailyIncome) {
+          _dailyIncome = dayTotal;
+        }
       }
 
       // Load expenses and saved finance record
@@ -53,6 +63,19 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
       if (financeDoc.exists) {
         final data = financeDoc.data();
         if (data != null) {
+          // If this is an auto-preserved record, update income from current sessions
+          final autoPreserved = data['autoPreserved'] ?? false;
+          if (autoPreserved && _dailyIncome > 0) {
+            // Update income in case new sessions were closed
+            final existingIncome = (data['income'] ?? 0).toDouble();
+            if (_dailyIncome > existingIncome) {
+              // Income has increased, update it
+              await _firestore.collection('daily_finance').doc(dateId).update({
+                'income': _dailyIncome,
+                'netProfit': _dailyIncome - (data['totalExpenses'] ?? 0).toDouble(),
+              });
+            }
+          }
           final expensesList = data['expenses'];
           _expenses = [];
           
@@ -96,6 +119,29 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
             (sum, expense) => sum + (expense['amount'] as num).toDouble(),
           );
           _isSaved = data['isSaved'] ?? false;
+          _autoPreserved = data['autoPreserved'] ?? false;
+          
+          // Load saved/updated timestamps if available
+          if (data['savedAt'] != null) {
+            if (data['savedAt'] is Timestamp) {
+              _savedAt = data['savedAt'] as Timestamp;
+            } else if (data['savedAt'] is Map) {
+              final tsMap = data['savedAt'] as Map;
+              if (tsMap.containsKey('_seconds')) {
+                _savedAt = Timestamp(tsMap['_seconds'] as int, (tsMap['_nanoseconds'] ?? 0) as int);
+              }
+            }
+          }
+          if (data['updatedAt'] != null) {
+            if (data['updatedAt'] is Timestamp) {
+              _updatedAt = data['updatedAt'] as Timestamp;
+            } else if (data['updatedAt'] is Map) {
+              final tsMap = data['updatedAt'] as Map;
+              if (tsMap.containsKey('_seconds')) {
+                _updatedAt = Timestamp(tsMap['_seconds'] as int, (tsMap['_nanoseconds'] ?? 0) as int);
+              }
+            }
+          }
         } else {
           _expenses = [];
           _totalExpenses = 0.0;
@@ -114,6 +160,64 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
       }
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  /// Calculate income from all closed sessions for the selected date
+  Future<void> _calculateIncomeFromSessions(String dateId) async {
+    try {
+      double totalIncome = 0.0;
+      
+      // Get all closed sessions from history for this date
+      final sessionsSnapshot = await _firestore
+          .collection('days')
+          .doc(dateId)
+          .collection('sessions')
+          .get();
+      
+      for (var doc in sessionsSnapshot.docs) {
+        final sessionData = doc.data();
+        // Use finalAmount if available (includes discount), otherwise totalAmount
+        final amount = (sessionData['finalAmount'] ?? 
+                       sessionData['totalAmount'] ?? 
+                       0).toDouble();
+        totalIncome += amount;
+      }
+      
+      setState(() {
+        _dailyIncome = totalIncome;
+      });
+    } catch (e) {
+      print('Error calculating income from sessions: $e');
+      // Keep existing income if calculation fails
+    }
+  }
+
+  /// Refresh income calculation (useful when new sessions are closed)
+  Future<void> _refreshIncome() async {
+    final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    await _calculateIncomeFromSessions(dateId);
+    
+    // Also check day's total
+    final dayDoc = await _firestore.collection('days').doc(dateId).get();
+    if (dayDoc.exists) {
+      final data = dayDoc.data();
+      final dayTotal = (data?['totalAmount'] ?? 0).toDouble();
+      if (dayTotal > _dailyIncome) {
+        setState(() {
+          _dailyIncome = dayTotal;
+        });
+      }
+    }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Income refreshed successfully'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -273,6 +377,14 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
         return expenseMap;
       }).toList();
 
+      // Get existing savedAt if updating (preserve original save time)
+      final existingDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+      final existingData = existingDoc.data();
+      dynamic savedAt = FieldValue.serverTimestamp();
+      if (existingData != null && existingData['savedAt'] != null) {
+        savedAt = existingData['savedAt']; // Preserve existing savedAt
+      }
+      
       // Save finance data with date as document ID (ensures one record per date)
       await _firestore.collection('daily_finance').doc(dateId).set({
         'date': dateId,
@@ -286,10 +398,28 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
         'totalExpenses': _totalExpenses,
         'netProfit': netProfit,
         'isSaved': true,
-        'savedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        'savedAt': savedAt, // Preserve original save time
+        'updatedAt': FieldValue.serverTimestamp(), // Always update this
       }, SetOptions(merge: true));
 
+      // Update local timestamps
+      final updatedDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+      if (updatedDoc.exists) {
+        final updatedData = updatedDoc.data();
+        if (updatedData != null) {
+          if (updatedData['savedAt'] != null) {
+            if (updatedData['savedAt'] is Timestamp) {
+              _savedAt = updatedData['savedAt'] as Timestamp;
+            }
+          }
+          if (updatedData['updatedAt'] != null) {
+            if (updatedData['updatedAt'] is Timestamp) {
+              _updatedAt = updatedData['updatedAt'] as Timestamp;
+            }
+          }
+        }
+      }
+      
       setState(() => _isSaved = true);
       
       if (mounted) {
@@ -342,6 +472,11 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
         title: const Text('Daily Finance'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshIncome,
+            tooltip: 'Refresh Income',
+          ),
+          IconButton(
             icon: const Icon(Icons.calendar_today),
             onPressed: _pickDate,
             tooltip: 'Select Date',
@@ -361,20 +496,226 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Column(
                           children: [
-                            Text(
-                              'Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
-                              style: const TextStyle(
-                                fontSize: 18,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _pickDate,
+                                  icon: const Icon(Icons.edit_calendar),
+                                  label: const Text('Change'),
+                                ),
+                              ],
+                            ),
+                            if (_autoPreserved && !_isSaved)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.blue.shade200),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.auto_awesome, size: 16, color: Colors.blue.shade700),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Auto-preserved: Income saved automatically',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blue.shade700,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Summary Card - Total Income and Expenses
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.blue.shade50,
+                              Colors.purple.shade50,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            const Text(
+                              'Daily Summary',
+                              style: TextStyle(
+                                fontSize: 20,
                                 fontWeight: FontWeight.bold,
+                                color: Colors.black87,
                               ),
                             ),
-                            TextButton.icon(
-                              onPressed: _pickDate,
-                              icon: const Icon(Icons.edit_calendar),
-                              label: const Text('Change'),
+                            const SizedBox(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                // Total Income
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.green.shade300,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        const Icon(
+                                          Icons.arrow_upward,
+                                          color: Colors.green,
+                                          size: 32,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          'Total Income',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Rs ${_dailyIncome.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                // Total Expenses
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade100,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.red.shade300,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        const Icon(
+                                          Icons.arrow_downward,
+                                          color: Colors.red,
+                                          size: 32,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          'Total Expenses',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Rs ${_totalExpenses.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            // Net Profit
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: netProfit >= 0 
+                                    ? Colors.blue.shade100 
+                                    : Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: netProfit >= 0 
+                                      ? Colors.blue.shade300 
+                                      : Colors.orange.shade300,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    netProfit >= 0 
+                                        ? Icons.trending_up 
+                                        : Icons.trending_down,
+                                    color: netProfit >= 0 
+                                        ? Colors.blue 
+                                        : Colors.orange,
+                                    size: 28,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text(
+                                    'Net Profit: ',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Rs ${netProfit.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: netProfit >= 0 
+                                          ? Colors.blue 
+                                          : Colors.orange,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -605,19 +946,36 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
                         ),
                       ),
                     ),
-                    if (_isSaved)
+                    if (_isSaved) ...[
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: Center(
-                          child: Text(
-                            '✓ Saved on ${DateFormat('MMM dd, yyyy hh:mm a').format(_selectedDate)}',
-                            style: TextStyle(
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                        child: Column(
+                          children: [
+                            if (_savedAt != null)
+                              Text(
+                                '✓ Saved: ${DateFormat('MMM dd, yyyy hh:mm a').format(_savedAt!.toDate())}',
+                                style: TextStyle(
+                                  color: Colors.green.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            if (_updatedAt != null && _savedAt != null && 
+                                _updatedAt!.toDate().difference(_savedAt!.toDate()).inSeconds > 5)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '↻ Updated: ${DateFormat('MMM dd, yyyy hh:mm a').format(_updatedAt!.toDate())}',
+                                  style: TextStyle(
+                                    color: Colors.orange.shade700,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),

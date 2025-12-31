@@ -51,6 +51,31 @@ class FinanceHistoryPage extends StatelessWidget {
               final netProfit = (data['netProfit'] ?? 0).toDouble();
               final expenses = List<Map<String, dynamic>>.from(data['expenses'] ?? []);
               final isSaved = data['isSaved'] ?? false;
+              final autoPreserved = data['autoPreserved'] ?? false;
+              
+              // Get timestamps
+              Timestamp? savedAt;
+              Timestamp? updatedAt;
+              if (data['savedAt'] != null) {
+                if (data['savedAt'] is Timestamp) {
+                  savedAt = data['savedAt'] as Timestamp;
+                } else if (data['savedAt'] is Map) {
+                  final tsMap = data['savedAt'] as Map;
+                  if (tsMap.containsKey('_seconds')) {
+                    savedAt = Timestamp(tsMap['_seconds'] as int, (tsMap['_nanoseconds'] ?? 0) as int);
+                  }
+                }
+              }
+              if (data['updatedAt'] != null) {
+                if (data['updatedAt'] is Timestamp) {
+                  updatedAt = data['updatedAt'] as Timestamp;
+                } else if (data['updatedAt'] is Map) {
+                  final tsMap = data['updatedAt'] as Map;
+                  if (tsMap.containsKey('_seconds')) {
+                    updatedAt = Timestamp(tsMap['_seconds'] as int, (tsMap['_nanoseconds'] ?? 0) as int);
+                  }
+                }
+              }
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -79,11 +104,44 @@ class FinanceHistoryPage extends StatelessWidget {
                           color: netProfit >= 0 ? Colors.green : Colors.red,
                         ),
                       ),
+                      if (savedAt != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Saved: ${DateFormat('MMM dd, yyyy hh:mm a').format(savedAt.toDate())}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                      if (updatedAt != null && savedAt != null && 
+                          updatedAt.toDate().difference(savedAt.toDate()).inSeconds > 5) ...[
+                        Text(
+                          'Updated: ${DateFormat('MMM dd, yyyy hh:mm a').format(updatedAt.toDate())}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
-                  trailing: isSaved
-                      ? const Icon(Icons.check_circle, color: Colors.green)
-                      : const Icon(Icons.pending, color: Colors.orange),
+                  trailing: autoPreserved
+                      ? Tooltip(
+                          message: 'Auto-preserved (income saved automatically)',
+                          child: const Icon(Icons.auto_awesome, color: Colors.blue),
+                        )
+                      : isSaved
+                          ? Tooltip(
+                              message: 'Manually saved',
+                              child: const Icon(Icons.check_circle, color: Colors.green),
+                            )
+                          : Tooltip(
+                              message: 'Not saved yet',
+                              child: const Icon(Icons.pending, color: Colors.orange),
+                            ),
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(16),
