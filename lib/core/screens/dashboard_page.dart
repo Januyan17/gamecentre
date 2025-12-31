@@ -6,9 +6,25 @@ import 'package:rowzow/core/services/firebase_service.dart';
 import 'package:rowzow/core/providers/session_provider.dart';
 import 'create_session_page.dart';
 import 'session_detail_page.dart';
+import 'pricing_settings_page.dart';
+import 'password_dialog.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
+
+  void _showPasswordDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => PasswordDialog(
+        onSuccess: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PricingSettingsPage()),
+          );
+        },
+      ),
+    );
+  }
 
   void _showDeleteConfirmation(
     BuildContext context,
@@ -146,7 +162,16 @@ class DashboardPage extends StatelessWidget {
     final fs = FirebaseService();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gaming Center Dashboard')),
+      appBar: AppBar(
+        title: const Text('Gaming Center Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => _showPasswordDialog(context),
+            tooltip: 'Pricing Settings',
+          ),
+        ],
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: fs.dayRef().snapshots(),
         builder: (context, snapshot) {

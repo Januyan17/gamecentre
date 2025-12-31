@@ -511,15 +511,15 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
     _calculatePrice();
   }
 
-  void _calculatePrice() {
+  void _calculatePrice() async {
     if (widget.service['type'] == 'PS4') {
-      price = PriceCalculator.ps4Price(
+      price = await PriceCalculator.ps4Price(
         hours: hours,
         minutes: minutes,
         additionalControllers: additionalControllers,
       );
     } else if (widget.service['type'] == 'PS5') {
-      price = PriceCalculator.ps5Price(
+      price = await PriceCalculator.ps5Price(
         hours: hours,
         minutes: minutes,
         additionalControllers: additionalControllers,

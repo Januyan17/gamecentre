@@ -312,15 +312,15 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     _calculatePrice();
   }
 
-  void _calculatePrice() {
+  void _calculatePrice() async {
     if (widget.deviceType == 'PS4') {
-      price = PriceCalculator.ps4Price(
+      price = await PriceCalculator.ps4Price(
         hours: hours,
         minutes: minutes,
         additionalControllers: additionalControllers,
       );
     } else if (widget.deviceType == 'PS5') {
-      price = PriceCalculator.ps5Price(
+      price = await PriceCalculator.ps5Price(
         hours: hours,
         minutes: minutes,
         additionalControllers: additionalControllers,

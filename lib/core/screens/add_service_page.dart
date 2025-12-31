@@ -28,8 +28,10 @@ class AddServicePage extends StatelessWidget {
 
           const Text('VR Game (20 min)', style: TextStyle(fontSize: 18)),
           ElevatedButton(
-            onPressed:
-                () => _add(context, {'type': 'VR', 'duration': 20, 'price': PriceCalculator.vr()}),
+            onPressed: () async {
+              final price = await PriceCalculator.vr();
+              _add(context, {'type': 'VR', 'duration': 20, 'price': price});
+            },
             child: const Text('Add VR Session'),
           ),
 
@@ -37,12 +39,14 @@ class AddServicePage extends StatelessWidget {
 
           const Text('Car Simulator (30 min)', style: TextStyle(fontSize: 18)),
           ElevatedButton(
-            onPressed:
-                () => _add(context, {
-                  'type': 'Simulator',
-                  'duration': 30,
-                  'price': PriceCalculator.carSimulator(),
-                }),
+            onPressed: () async {
+              final price = await PriceCalculator.carSimulator();
+              _add(context, {
+                'type': 'Simulator',
+                'duration': 30,
+                'price': price,
+              });
+            },
             child: const Text('Add Simulator Session'),
           ),
 
@@ -87,6 +91,13 @@ class _TheatreDialog extends StatefulWidget {
 class _TheatreDialogState extends State<_TheatreDialog> {
   int _hours = 1;
   final TextEditingController _peopleController = TextEditingController(text: '4');
+  double _price = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _updatePrice();
+  }
 
   @override
   void dispose() {
@@ -94,13 +105,19 @@ class _TheatreDialogState extends State<_TheatreDialog> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Future<void> _updatePrice() async {
     final people = int.tryParse(_peopleController.text) ?? 4;
-    final price = PriceCalculator.theatre(
+    final price = await PriceCalculator.theatre(
       hours: _hours,
       people: people.clamp(1, 10),
     );
+    if (mounted) {
+      setState(() => _price = price);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
 
     return AlertDialog(
       title: const Text('Theatre Booking'),
@@ -123,12 +140,14 @@ class _TheatreDialogState extends State<_TheatreDialog> {
               DropdownMenuItem(value: 1, child: Text('1 Hour')),
               DropdownMenuItem(value: 2, child: Text('2 Hours')),
               DropdownMenuItem(value: 3, child: Text('3 Hours')),
+              DropdownMenuItem(value: 4, child: Text('4 Hours')),
             ],
             onChanged: (value) {
               if (value != null) {
                 setState(() {
                   _hours = value;
                 });
+                _updatePrice();
               }
             },
           ),
@@ -151,7 +170,7 @@ class _TheatreDialogState extends State<_TheatreDialog> {
               helperText: 'Maximum 10 people',
             ),
             onChanged: (value) {
-              setState(() {}); // Trigger rebuild to update price
+              _updatePrice();
             },
           ),
           const SizedBox(height: 16),
@@ -169,7 +188,7 @@ class _TheatreDialogState extends State<_TheatreDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'Rs $price',
+                  'Rs ${_price.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -187,14 +206,14 @@ class _TheatreDialogState extends State<_TheatreDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () {
+          onPressed: () async {
             final peopleCount = int.tryParse(_peopleController.text) ?? 4;
-            final finalPrice = PriceCalculator.theatre(
+            final finalPrice = await PriceCalculator.theatre(
               hours: _hours,
               people: peopleCount.clamp(1, 10),
             );
 
-            widget.onAdd(_hours, peopleCount.clamp(1, 10), finalPrice);
+            widget.onAdd(_hours, peopleCount.clamp(1, 10), finalPrice.toInt());
             Navigator.pop(context);
           },
           child: const Text('Add'),
