@@ -184,7 +184,19 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                       }
 
                       final data = snapshot.data!.data() as Map<String, dynamic>;
-                      final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
+                      
+                      // Properly convert services from Firestore
+                      final servicesList = data['services'];
+                      List<Map<String, dynamic>> services = [];
+                      if (servicesList != null && servicesList is List) {
+                        services = servicesList.map((s) {
+                          if (s is Map) {
+                            return Map<String, dynamic>.from(s);
+                          }
+                          return <String, dynamic>{};
+                        }).toList().cast<Map<String, dynamic>>();
+                      }
+                      
                       final currentTotal = (data['totalAmount'] ?? 0).toDouble();
 
                       // Update provider state
@@ -214,16 +226,37 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                       return RefreshIndicator(
                         onRefresh: () => provider.refreshSession(),
                         child: ListView.builder(
+                          key: ValueKey('services-${services.length}-${currentTotal}'),
                           itemCount: services.length,
                           itemBuilder: (context, index) {
                         final service = services[index];
-                        final type = service['type'] ?? 'Unknown';
-                        final price = (service['price'] ?? 0).toDouble();
-                        final multiplayer = service['multiplayer'] ?? false;
+                        final type = service['type']?.toString() ?? 'Unknown';
+                        
+                        // Properly convert price from Firestore (could be int, double, or num)
+                        double price = 0.0;
+                        if (service['price'] != null) {
+                          if (service['price'] is num) {
+                            price = (service['price'] as num).toDouble();
+                          } else if (service['price'] is String) {
+                            price = double.tryParse(service['price'] as String) ?? 0.0;
+                          }
+                        }
+                        
+                        final multiplayer = service['multiplayer'] == true || service['multiplayer'] == 'true';
+                        
+                        // Get hours and minutes
+                        int hours = 0;
+                        int minutes = 0;
+                        if (service['hours'] != null) {
+                          hours = service['hours'] is int ? service['hours'] as int : int.tryParse(service['hours'].toString()) ?? 0;
+                        }
+                        if (service['minutes'] != null) {
+                          minutes = service['minutes'] is int ? service['minutes'] as int : int.tryParse(service['minutes'].toString()) ?? 0;
+                        }
                         
                         String subtitle = 'Rs ${price.toStringAsFixed(2)}';
-                        if (service['hours'] != null && service['minutes'] != null) {
-                          subtitle = '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                        if (hours > 0 || minutes > 0) {
+                          subtitle = '${hours}h ${minutes}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
                         } else if (service['duration'] != null) {
                           subtitle = '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
                         }

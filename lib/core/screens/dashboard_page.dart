@@ -37,7 +37,10 @@ class DashboardPage extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    Text('Today Total: Rs $total', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    Text(
+                      'Today Total: Rs $total',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     Text('Total Users: $users', style: const TextStyle(fontSize: 18)),
                   ],
@@ -88,46 +91,146 @@ class DashboardPage extends StatelessWidget {
                         final data = doc.data() as Map<String, dynamic>;
                         final customerName = data['customerName'] ?? 'Unknown';
                         final totalAmount = (data['totalAmount'] ?? 0).toDouble();
-                        final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
+                        
+                        // Properly convert services from Firestore
+                        final servicesList = data['services'];
+                        List<Map<String, dynamic>> services = [];
+                        if (servicesList != null && servicesList is List) {
+                          services = servicesList.map((s) {
+                            if (s is Map) {
+                              return Map<String, dynamic>.from(s);
+                            }
+                            return <String, dynamic>{};
+                          }).toList().cast<Map<String, dynamic>>();
+                        }
+                        
                         final startTime = data['startTime'] as Timestamp?;
+
+                        String timeInfo = '';
+                        if (startTime != null) {
+                          final start = DateTime.fromMillisecondsSinceEpoch(startTime.seconds * 1000);
+                          timeInfo = 'Started: ${start.toString().substring(11, 16)}';
+                        }
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
+                          key: ValueKey('${doc.id}-${services.length}-${totalAmount}'),
+                          child: ExpansionTile(
+                            initiallyExpanded: services.isNotEmpty,
                             leading: CircleAvatar(
                               backgroundColor: Colors.blue,
                               child: Text(
                                 customerName[0].toUpperCase(),
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
-                            title: Text(customerName),
+                            title: Text(
+                              customerName,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Services: ${services.length}'),
                                 Text('Total: Rs ${totalAmount.toStringAsFixed(2)}'),
-                                if (startTime != null)
+                                if (services.isNotEmpty)
                                   Text(
-                                    'Started: ${DateTime.fromMillisecondsSinceEpoch(startTime.seconds * 1000).toString().substring(11, 16)}',
+                                    '${services.length} service${services.length != 1 ? 's' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                if (timeInfo.isNotEmpty)
+                                  Text(
+                                    timeInfo,
                                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                   ),
                               ],
                             ),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                            onTap: () async {
-                              // Load the session first
-                              await context.read<SessionProvider>().loadSession(doc.id);
-                              // Navigate to session detail
-                              if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SessionDetailPage(),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (services.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade100,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${services.length}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green.shade800,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
-                                );
-                              }
-                            },
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.open_in_new, size: 18),
+                                  onPressed: () async {
+                                    // Load the session first
+                                    await context.read<SessionProvider>().loadSession(doc.id);
+                                    // Navigate to session detail
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const SessionDetailPage()),
+                                      );
+                                    }
+                                  },
+                                  tooltip: 'View Details',
+                                ),
+                              ],
+                            ),
+                            children: [
+                              if (services.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Text(
+                                    'No services added yet',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                )
+                              else
+                                ...services.map((service) {
+                                  final type = service['type'] ?? 'Unknown';
+                                  final price = (service['price'] ?? 0).toDouble();
+                                  final multiplayer = service['multiplayer'] ?? false;
+                                  String subtitle = 'Rs ${price.toStringAsFixed(2)}';
+
+                                  if (service['hours'] != null && service['minutes'] != null) {
+                                    subtitle =
+                                        '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                                  } else if (service['duration'] != null) {
+                                    subtitle =
+                                        '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
+                                  }
+
+                                  return ListTile(
+                                    dense: true,
+                                    leading: Icon(
+                                      type == 'PS5'
+                                          ? Icons.sports_esports
+                                          : type == 'PS4'
+                                              ? Icons.videogame_asset
+                                              : Icons.category,
+                                      color: type == 'PS5'
+                                          ? Colors.blue
+                                          : type == 'PS4'
+                                              ? Colors.purple
+                                              : Colors.grey,
+                                    ),
+                                    title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
+                                    subtitle: Text(subtitle),
+                                  );
+                                }).toList(),
+                            ],
                           ),
                         );
                       },
@@ -157,7 +260,10 @@ class DashboardPage extends StatelessWidget {
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryPage()));
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HistoryPage()),
+                          );
                         },
                         icon: const Icon(Icons.history),
                         label: const Text('History'),
