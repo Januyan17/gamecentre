@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rowzow/core/services/session_service.dart';
+import 'package:rowzow/core/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SessionProvider extends ChangeNotifier {
@@ -54,9 +55,71 @@ class SessionProvider extends ChangeNotifier {
     try {
       await _service.addService(activeSessionId!, service);
       await refreshSession();
+      
+      // Schedule notification for time-up (only for PS4, PS5, Theatre, Simulator - not VR)
+      final serviceType = service['type'] as String? ?? '';
+      if (serviceType != 'VR') {
+        await _scheduleNotificationForService(service, activeSessionId!);
+      }
     } catch (e) {
       // Re-throw to let the caller handle it
       rethrow;
+    }
+  }
+
+  /// Schedule a notification for when a service time slot completes
+  Future<void> _scheduleNotificationForService(
+    Map<String, dynamic> service,
+    String sessionId,
+  ) async {
+    try {
+      // Get customer name from session
+      final sessionDoc = await _service.sessionsRef().doc(sessionId).get();
+      final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+      final customerName = sessionData?['customerName'] as String? ?? 'Customer';
+
+      final serviceType = service['type'] as String? ?? '';
+      final serviceId = service['id'] as String? ?? '${sessionId}_${DateTime.now().millisecondsSinceEpoch}';
+
+      DateTime? endTime;
+
+      // Calculate end time based on service type
+      if (serviceType == 'PS4' || serviceType == 'PS5') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 0;
+          final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+          endTime = startTime.add(Duration(hours: hours, minutes: minutes));
+        }
+      } else if (serviceType == 'Theatre') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 1;
+          endTime = startTime.add(Duration(hours: hours));
+        }
+      } else if (serviceType == 'Simulator') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final duration = (service['duration'] as num?)?.toInt() ?? 30;
+          endTime = startTime.add(Duration(minutes: duration));
+        }
+      }
+
+      // Schedule notification if end time is calculated
+      if (endTime != null) {
+        await NotificationService().scheduleServiceTimeUpNotification(
+          serviceId: serviceId,
+          serviceType: serviceType,
+          customerName: customerName,
+          endTime: endTime,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error scheduling notification: $e');
+      // Don't throw - notification failure shouldn't break service addition
     }
   }
 
@@ -65,12 +128,38 @@ class SessionProvider extends ChangeNotifier {
     Map<String, dynamic> updatedService,
   ) async {
     if (activeSessionId == null) return;
+    
+    // Cancel old notification if service exists
+    if (index < services.length) {
+      final oldService = services[index];
+      final oldServiceId = oldService['id'] as String?;
+      if (oldServiceId != null) {
+        await NotificationService().cancelNotification(oldServiceId);
+      }
+    }
+    
     await _service.updateService(activeSessionId!, index, updatedService);
     await refreshSession();
+    
+    // Schedule new notification for updated service (only for PS4, PS5, Theatre, Simulator - not VR)
+    final serviceType = updatedService['type'] as String? ?? '';
+    if (serviceType != 'VR') {
+      await _scheduleNotificationForService(updatedService, activeSessionId!);
+    }
   }
 
   Future<void> deleteService(int index) async {
     if (activeSessionId == null) return;
+    
+    // Cancel notification for the deleted service
+    if (index < services.length) {
+      final service = services[index];
+      final serviceId = service['id'] as String?;
+      if (serviceId != null) {
+        await NotificationService().cancelNotification(serviceId);
+      }
+    }
+    
     await _service.deleteService(activeSessionId!, index);
     await refreshSession();
   }

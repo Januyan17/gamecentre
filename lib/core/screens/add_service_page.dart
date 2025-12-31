@@ -45,6 +45,7 @@ class AddServicePage extends StatelessWidget {
                 'type': 'Simulator',
                 'duration': 30,
                 'price': price,
+                'startTime': DateTime.now().toIso8601String(),
               });
             },
             child: const Text('Add Simulator Session'),
@@ -72,6 +73,7 @@ class AddServicePage extends StatelessWidget {
             'hours': hours,
             'people': people,
             'price': price,
+            'startTime': DateTime.now().toIso8601String(),
           });
         },
       ),

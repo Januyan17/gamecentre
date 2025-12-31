@@ -3,6 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import '../services/price_calculator.dart';
 
+/// Pricing Settings Page
+/// 
+/// IMPORTANT: This page is password-protected (password: rowzow172)
+/// Only admin with correct password can change pricing.
+/// 
+/// Pricing settings are stored in Firestore 'settings/pricing' collection.
+/// These prices are NEVER reset automatically by daily reset service.
+/// Prices can ONLY be changed manually by admin through this page.
 class PricingSettingsPage extends StatefulWidget {
   const PricingSettingsPage({super.key});
 
