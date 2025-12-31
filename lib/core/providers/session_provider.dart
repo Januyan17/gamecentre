@@ -9,6 +9,14 @@ class SessionProvider extends ChangeNotifier {
   double currentTotal = 0;
   List<Map<String, dynamic>> services = [];
 
+  /// Reset provider state (called when daily reset happens)
+  void resetState() {
+    activeSessionId = null;
+    currentTotal = 0;
+    services = [];
+    notifyListeners();
+  }
+
   Future<void> createSession(String name) async {
     activeSessionId = await _service.createSession(name);
     currentTotal = 0;

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:rowzow/core/screens/history_page.dart';
 import 'package:rowzow/core/services/firebase_service.dart';
+import 'package:rowzow/core/services/daily_reset_service.dart';
 import 'package:rowzow/core/providers/session_provider.dart';
 import 'create_session_page.dart';
 import 'session_detail_page.dart';
@@ -11,8 +12,35 @@ import 'password_dialog.dart';
 import 'daily_finance_page.dart';
 import 'finance_history_page.dart';
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  final DailyResetService _dailyResetService = DailyResetService();
+  bool _hasCheckedReset = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _performDailyReset();
+  }
+
+  Future<void> _performDailyReset() async {
+    if (!_hasCheckedReset) {
+      _hasCheckedReset = true;
+      // Perform daily reset check in background
+      await _dailyResetService.checkAndPerformDailyReset();
+      
+      // Reset provider state after daily reset
+      if (mounted) {
+        context.read<SessionProvider>().resetState();
+      }
+    }
+  }
 
   void _showPasswordDialog(BuildContext context) {
     showDialog(
