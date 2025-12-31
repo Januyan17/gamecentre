@@ -10,6 +10,137 @@ import 'session_detail_page.dart';
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
+  void _showDeleteConfirmation(
+    BuildContext context,
+    String sessionId,
+    String customerName,
+    double totalAmount,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('Delete Session'),
+            content: Text(
+              'Are you sure you want to delete this session?\n\n'
+              'Customer: $customerName\n'
+              'Total Amount: Rs ${totalAmount.toStringAsFixed(2)}\n\n'
+              'This action cannot be undone. The session will be permanently deleted.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext); // Close confirmation dialog
+
+                  // Store the navigator and scaffold messenger before async operations
+                  final navigator = Navigator.of(context, rootNavigator: true);
+                  final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+                  // Show loading
+                  if (!context.mounted) return;
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder:
+                        (loadingContext) => PopScope(
+                          canPop: false,
+                          child: const Center(child: CircularProgressIndicator()),
+                        ),
+                  );
+
+                  try {
+                    await context.read<SessionProvider>().deleteActiveSession(sessionId);
+
+                    // Wait a bit to ensure Firestore updates
+                    await Future.delayed(const Duration(milliseconds: 500));
+
+                    // Close loading dialog using root navigator
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Wait a bit more to ensure dialog is fully closed
+                    await Future.delayed(const Duration(milliseconds: 200));
+
+                    // Show success message using stored scaffold messenger
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Session deleted successfully',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        margin: const EdgeInsets.all(16),
+                      ),
+                    );
+                  } catch (e) {
+                    // Close loading dialog using root navigator
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Wait a bit to ensure dialog is fully closed
+                    await Future.delayed(const Duration(milliseconds: 200));
+
+                    // Show error message using stored scaffold messenger
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.error, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Error deleting session: ${e.toString()}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 4),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        margin: const EdgeInsets.all(16),
+                      ),
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fs = FirebaseService();
@@ -91,24 +222,30 @@ class DashboardPage extends StatelessWidget {
                         final data = doc.data() as Map<String, dynamic>;
                         final customerName = data['customerName'] ?? 'Unknown';
                         final totalAmount = (data['totalAmount'] ?? 0).toDouble();
-                        
+
                         // Properly convert services from Firestore
                         final servicesList = data['services'];
                         List<Map<String, dynamic>> services = [];
                         if (servicesList != null && servicesList is List) {
-                          services = servicesList.map((s) {
-                            if (s is Map) {
-                              return Map<String, dynamic>.from(s);
-                            }
-                            return <String, dynamic>{};
-                          }).toList().cast<Map<String, dynamic>>();
+                          services =
+                              servicesList
+                                  .map((s) {
+                                    if (s is Map) {
+                                      return Map<String, dynamic>.from(s);
+                                    }
+                                    return <String, dynamic>{};
+                                  })
+                                  .toList()
+                                  .cast<Map<String, dynamic>>();
                         }
-                        
+
                         final startTime = data['startTime'] as Timestamp?;
 
                         String timeInfo = '';
                         if (startTime != null) {
-                          final start = DateTime.fromMillisecondsSinceEpoch(startTime.seconds * 1000);
+                          final start = DateTime.fromMillisecondsSinceEpoch(
+                            startTime.seconds * 1000,
+                          );
                           timeInfo = 'Started: ${start.toString().substring(11, 16)}';
                         }
 
@@ -170,7 +307,7 @@ class DashboardPage extends StatelessWidget {
                                       ),
                                     ),
                                   ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 4),
                                 IconButton(
                                   icon: const Icon(Icons.open_in_new, size: 18),
                                   onPressed: () async {
@@ -180,11 +317,24 @@ class DashboardPage extends StatelessWidget {
                                     if (context.mounted) {
                                       Navigator.push(
                                         context,
-                                        MaterialPageRoute(builder: (_) => const SessionDetailPage()),
+                                        MaterialPageRoute(
+                                          builder: (_) => const SessionDetailPage(),
+                                        ),
                                       );
                                     }
                                   },
                                   tooltip: 'View Details',
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                  onPressed:
+                                      () => _showDeleteConfirmation(
+                                        context,
+                                        doc.id,
+                                        customerName,
+                                        totalAmount,
+                                      ),
+                                  tooltip: 'Delete Session',
                                 ),
                               ],
                             ),
@@ -218,11 +368,12 @@ class DashboardPage extends StatelessWidget {
                                       type == 'PS5'
                                           ? Icons.sports_esports
                                           : type == 'PS4'
-                                              ? Icons.videogame_asset
-                                              : Icons.category,
-                                      color: type == 'PS5'
-                                          ? Colors.blue
-                                          : type == 'PS4'
+                                          ? Icons.videogame_asset
+                                          : Icons.category,
+                                      color:
+                                          type == 'PS5'
+                                              ? Colors.blue
+                                              : type == 'PS4'
                                               ? Colors.purple
                                               : Colors.grey,
                                     ),

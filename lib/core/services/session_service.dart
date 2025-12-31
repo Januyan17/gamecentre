@@ -39,10 +39,15 @@ class SessionService {
 
     final currentTotal = (data['totalAmount'] ?? 0).toDouble();
     final newTotal = currentTotal + (service['price'] as num).toDouble();
+    
+    // Recalculate final amount if discount exists
+    final discount = (data['discount'] ?? 0).toDouble();
+    final finalAmount = (newTotal - discount).clamp(0.0, double.infinity);
 
     await _fs.activeSessionsRef().doc(sessionId).update({
       'services': services,
       'totalAmount': newTotal,
+      if (discount > 0) 'finalAmount': finalAmount,
     });
   }
 
@@ -64,10 +69,15 @@ class SessionService {
 
       final currentTotal = (data['totalAmount'] ?? 0).toDouble();
       final newTotal = currentTotal + priceDiff;
+      
+      // Recalculate final amount if discount exists
+      final discount = (data['discount'] ?? 0).toDouble();
+      final finalAmount = (newTotal - discount).clamp(0.0, double.infinity);
 
       await _fs.activeSessionsRef().doc(sessionId).update({
         'services': services,
         'totalAmount': newTotal,
+        if (discount > 0) 'finalAmount': finalAmount,
       });
     }
   }
@@ -86,10 +96,15 @@ class SessionService {
         0.0,
         double.infinity,
       );
+      
+      // Recalculate final amount if discount exists
+      final discount = (data['discount'] ?? 0).toDouble();
+      final finalAmount = (newTotal - discount).clamp(0.0, double.infinity);
 
       await _fs.activeSessionsRef().doc(sessionId).update({
         'services': services,
         'totalAmount': newTotal,
+        if (discount > 0) 'finalAmount': finalAmount,
       });
     }
   }
@@ -136,6 +151,37 @@ class SessionService {
         .collection('sessions')
         .doc(sessionId)
         .update(updates);
+  }
+
+  Future<void> applyDiscount(String sessionId, double discountAmount) async {
+    final doc = await _fs.activeSessionsRef().doc(sessionId).get();
+    if (!doc.exists) {
+      throw Exception('Session does not exist');
+    }
+
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null) {
+      throw Exception('Session data is null');
+    }
+
+    final currentTotal = (data['totalAmount'] ?? 0).toDouble();
+    final finalTotal = (currentTotal - discountAmount).clamp(0.0, double.infinity);
+
+    await _fs.activeSessionsRef().doc(sessionId).update({
+      'discount': discountAmount,
+      'finalAmount': finalTotal,
+    });
+  }
+
+  Future<void> removeDiscount(String sessionId) async {
+    await _fs.activeSessionsRef().doc(sessionId).update({
+      'discount': FieldValue.delete(),
+      'finalAmount': FieldValue.delete(),
+    });
+  }
+
+  Future<void> deleteActiveSession(String sessionId) async {
+    await _fs.activeSessionsRef().doc(sessionId).delete();
   }
 
   Future<void> deleteHistorySession(

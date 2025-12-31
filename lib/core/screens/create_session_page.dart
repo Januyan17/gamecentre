@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/session_provider.dart';
 import 'session_detail_page.dart';
@@ -12,10 +13,15 @@ class CreateSessionPage extends StatefulWidget {
 
 class _CreateSessionPageState extends State<CreateSessionPage> {
   final List<TextEditingController> _customerControllers = [TextEditingController()];
+  final List<TextEditingController> _mobileControllers = [TextEditingController()];
+  bool _isCreating = false;
 
   @override
   void dispose() {
     for (var controller in _customerControllers) {
+      controller.dispose();
+    }
+    for (var controller in _mobileControllers) {
       controller.dispose();
     }
     super.dispose();
@@ -24,6 +30,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   void _addCustomer() {
     setState(() {
       _customerControllers.add(TextEditingController());
+      _mobileControllers.add(TextEditingController());
     });
   }
 
@@ -31,7 +38,9 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     if (_customerControllers.length > 1) {
       setState(() {
         _customerControllers[index].dispose();
+        _mobileControllers[index].dispose();
         _customerControllers.removeAt(index);
+        _mobileControllers.removeAt(index);
       });
     }
   }
@@ -46,7 +55,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Customer Names (Add multiple if needed):',
+              'Customer Details (Add multiple if needed):',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -54,26 +63,67 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
               child: ListView.builder(
                 itemCount: _customerControllers.length,
                 itemBuilder: (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'Customer ${index + 1}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (_customerControllers.length > 1)
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                  onPressed: () => _removeCustomer(index),
+                                  tooltip: 'Remove customer',
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
                             controller: _customerControllers[index],
-                            decoration: InputDecoration(
-                              labelText: 'Customer ${index + 1}',
-                              border: const OutlineInputBorder(),
+                            decoration: const InputDecoration(
+                              labelText: 'Customer Name',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.person),
                             ),
                           ),
-                        ),
-                        if (_customerControllers.length > 1)
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _removeCustomer(index),
-                            tooltip: 'Remove customer',
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _mobileControllers[index],
+                            keyboardType: TextInputType.phone,
+                            maxLength: 10,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                            decoration: InputDecoration(
+                              labelText: 'Mobile Number',
+                              border: const OutlineInputBorder(),
+                              prefixIcon: const Icon(Icons.phone),
+                              prefixText: '+94 ',
+                              counterText: '',
+                              helperText: 'Enter 10 digit mobile number',
+                              helperMaxLines: 1,
+                              errorText:
+                                  _mobileControllers[index].text.isNotEmpty &&
+                                          _mobileControllers[index].text.length != 10
+                                      ? 'Mobile number must be 10 digits'
+                                      : null,
+                            ),
+                            onChanged: (value) {
+                              setState(() {});
+                            },
                           ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -88,29 +138,127 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                 ),
                 const Spacer(),
                 ElevatedButton(
-                  onPressed: () async {
-                    final customers = _customerControllers
-                        .map((c) => c.text.trim())
-                        .where((name) => name.isNotEmpty)
-                        .toList();
-                    
-                    if (customers.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please enter at least one customer name')),
-                      );
-                      return;
-                    }
+                  onPressed:
+                      _isCreating
+                          ? null
+                          : () async {
+                            // Prevent double-tapping
+                            if (_isCreating) return;
 
-                    final customerName = customers.join(', ');
-                    await context.read<SessionProvider>().createSession(customerName);
-                    if (mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SessionDetailPage()),
-                      );
-                    }
-                  },
-                  child: const Text('Start Session'),
+                            setState(() {
+                              _isCreating = true;
+                            });
+
+                            try {
+                              // Validate all fields
+                              bool hasError = false;
+                              String errorMessage = '';
+
+                              for (int i = 0; i < _customerControllers.length; i++) {
+                                final name = _customerControllers[i].text.trim();
+                                final mobile = _mobileControllers[i].text.trim();
+
+                                if (name.isEmpty && mobile.isNotEmpty) {
+                                  hasError = true;
+                                  errorMessage = 'Please enter customer name for customer ${i + 1}';
+                                  break;
+                                }
+
+                                if (name.isNotEmpty && mobile.isEmpty) {
+                                  hasError = true;
+                                  errorMessage = 'Please enter mobile number for customer ${i + 1}';
+                                  break;
+                                }
+
+                                if (mobile.isNotEmpty && mobile.length != 10) {
+                                  hasError = true;
+                                  errorMessage =
+                                      'Mobile number for customer ${i + 1} must be 10 digits';
+                                  break;
+                                }
+                              }
+
+                              if (hasError) {
+                                if (mounted) {
+                                  setState(() {
+                                    _isCreating = false;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(errorMessage),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              // Get valid customers (both name and mobile filled)
+                              final validCustomers = <Map<String, String>>[];
+                              for (int i = 0; i < _customerControllers.length; i++) {
+                                final name = _customerControllers[i].text.trim();
+                                final mobile = _mobileControllers[i].text.trim();
+
+                                if (name.isNotEmpty && mobile.isNotEmpty) {
+                                  validCustomers.add({'name': name, 'mobile': mobile});
+                                }
+                              }
+
+                              if (validCustomers.isEmpty) {
+                                if (mounted) {
+                                  setState(() {
+                                    _isCreating = false;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Please enter at least one customer with name and mobile number',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              // Format customer data
+                              final customerName = validCustomers
+                                  .map((c) => '${c['name']} (${c['mobile']})')
+                                  .join(', ');
+
+                              await context.read<SessionProvider>().createSession(customerName);
+
+                              if (mounted) {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const SessionDetailPage()),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                setState(() {
+                                  _isCreating = false;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error creating session: ${e.toString()}'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                  child:
+                      _isCreating
+                          ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                          : const Text('Start Session'),
                 ),
               ],
             ),

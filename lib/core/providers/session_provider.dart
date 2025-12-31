@@ -67,13 +67,45 @@ class SessionProvider extends ChangeNotifier {
     await refreshSession();
   }
 
+  Future<void> applyDiscount(double discountAmount) async {
+    if (activeSessionId == null) return;
+    await _service.applyDiscount(activeSessionId!, discountAmount);
+    await refreshSession();
+  }
+
+  Future<void> removeDiscount() async {
+    if (activeSessionId == null) return;
+    await _service.removeDiscount(activeSessionId!);
+    await refreshSession();
+  }
+
   Future<void> closeSession() async {
     if (activeSessionId == null) return;
-    await _service.closeSession(activeSessionId!, currentTotal);
+    
+    // Get the final amount (with discount if applied)
+    final doc = await _service.sessionsRef().doc(activeSessionId!).get();
+    double finalTotal = currentTotal;
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>?;
+      finalTotal = (data?['finalAmount'] ?? data?['totalAmount'] ?? currentTotal).toDouble();
+    }
+    
+    await _service.closeSession(activeSessionId!, finalTotal);
     activeSessionId = null;
     currentTotal = 0;
     services = [];
     notifyListeners();
+  }
+
+  Future<void> deleteActiveSession(String sessionId) async {
+    await _service.deleteActiveSession(sessionId);
+    // If the deleted session was the active one, clear it
+    if (activeSessionId == sessionId) {
+      activeSessionId = null;
+      currentTotal = 0;
+      services = [];
+      notifyListeners();
+    }
   }
 
   CollectionReference sessionsRef() => _service.sessionsRef();

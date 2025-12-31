@@ -20,7 +20,7 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
       builder:
           (context) => _TimeCalculatorDialog(
             deviceType: type,
-            onConfirm: (hours, minutes, price, multiplayer) {
+            onConfirm: (hours, minutes, price, additionalControllers) {
               setState(() {
                 selectedDevices.add({
                   'id': const Uuid().v4(),
@@ -28,7 +28,7 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   'hours': hours,
                   'minutes': minutes,
                   'price': price,
-                  'multiplayer': multiplayer,
+                  'additionalControllers': additionalControllers,
                   'startTime': DateTime.now().toIso8601String(),
                 });
               });
@@ -47,15 +47,15 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
             deviceType: device['type'],
             initialHours: device['hours'],
             initialMinutes: device['minutes'],
-            initialMultiplayer: device['multiplayer'] ?? false,
-            onConfirm: (hours, minutes, price, multiplayer) {
+            initialAdditionalControllers: device['additionalControllers'] ?? 0,
+            onConfirm: (hours, minutes, price, additionalControllers) {
               setState(() {
                 selectedDevices[index] = {
                   ...device,
                   'hours': hours,
                   'minutes': minutes,
                   'price': price,
-                  'multiplayer': multiplayer,
+                  'additionalControllers': additionalControllers,
                 };
               });
               Navigator.pop(context);
@@ -282,14 +282,14 @@ class _TimeCalculatorDialog extends StatefulWidget {
   final String deviceType;
   final int? initialHours;
   final int? initialMinutes;
-  final bool? initialMultiplayer;
-  final Function(int hours, int minutes, double price, bool multiplayer) onConfirm;
+  final int? initialAdditionalControllers;
+  final Function(int hours, int minutes, double price, int additionalControllers) onConfirm;
 
   const _TimeCalculatorDialog({
     required this.deviceType,
     this.initialHours,
     this.initialMinutes,
-    this.initialMultiplayer,
+    this.initialAdditionalControllers,
     required this.onConfirm,
   });
 
@@ -300,7 +300,7 @@ class _TimeCalculatorDialog extends StatefulWidget {
 class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
   late int hours;
   late int minutes;
-  late bool multiplayer;
+  late int additionalControllers;
   double price = 0;
 
   @override
@@ -308,15 +308,23 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     super.initState();
     hours = widget.initialHours ?? 0;
     minutes = widget.initialMinutes ?? 0;
-    multiplayer = widget.initialMultiplayer ?? false;
+    additionalControllers = widget.initialAdditionalControllers ?? 0;
     _calculatePrice();
   }
 
   void _calculatePrice() {
     if (widget.deviceType == 'PS4') {
-      price = PriceCalculator.ps4Price(hours: hours, minutes: minutes, multiplayer: multiplayer);
+      price = PriceCalculator.ps4Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
     } else if (widget.deviceType == 'PS5') {
-      price = PriceCalculator.ps5Price(hours: hours, minutes: minutes, multiplayer: multiplayer);
+      price = PriceCalculator.ps5Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
     }
     setState(() {});
   }
@@ -407,17 +415,60 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
             ],
           ),
           const SizedBox(height: 16),
-          // Multiplayer toggle
-          SwitchListTile(
-            title: const Text('Multiplayer (+Rs 150)'),
-            subtitle: const Text('Add extra console for multiplayer'),
-            value: multiplayer,
-            onChanged: (value) {
-              setState(() {
-                multiplayer = value;
-                _calculatePrice();
-              });
-            },
+          // Additional Controllers
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  'Additional Controllers',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Rs 150 per controller',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: () {
+                        if (additionalControllers > 0) {
+                          setState(() {
+                            additionalControllers--;
+                            _calculatePrice();
+                          });
+                        }
+                      },
+                    ),
+                    Container(
+                      width: 60,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$additionalControllers',
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: () {
+                        setState(() {
+                          additionalControllers++;
+                          _calculatePrice();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Container(
@@ -429,14 +480,18 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
             child: Column(
               children: [
                 Text('Total Time: ${hours}h ${minutes}m', style: const TextStyle(fontSize: 16)),
-                if (multiplayer)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Multiplayer: +Rs 150',
-                      style: TextStyle(fontSize: 12, color: Colors.green.shade700),
-                    ),
+                if (additionalControllers > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Additional Controllers: $additionalControllers × Rs 150',
+                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Controller Charge: Rs ${(additionalControllers * 150).toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   'Price: Rs ${price.toStringAsFixed(2)}',
@@ -459,12 +514,12 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        ElevatedButton(
+          ElevatedButton(
           onPressed:
               (hours == 0 && minutes == 0)
                   ? null
                   : () {
-                    widget.onConfirm(hours, minutes, price, multiplayer);
+                    widget.onConfirm(hours, minutes, price, additionalControllers);
                   },
           child: const Text('Add'),
         ),

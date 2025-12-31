@@ -5,21 +5,22 @@ class PriceCalculator {
   // PS5 pricing per hour
   static const double ps5HourlyRate = 350.0;
 
-  // Multiplayer additional charge
-  static const double multiplayerCharge = 150.0;
+  // Additional controller charge per controller (flat rate)
+  static const double additionalControllerRate = 150.0;
 
   // Calculate price based on hours and minutes for PS4
   static double ps4Price({
     required int hours,
     required int minutes,
-    bool multiplayer = false,
+    int additionalControllers = 0,
   }) {
     double totalHours = hours + (minutes / 60.0);
     // Round up to nearest 15 minutes
     totalHours = (totalHours * 4).ceil() / 4.0;
     double basePrice = totalHours * ps4HourlyRate;
-    if (multiplayer) {
-      basePrice += multiplayerCharge;
+    // Add additional controller charges: Rs 150 per controller (flat rate)
+    if (additionalControllers > 0) {
+      basePrice += (additionalControllers * additionalControllerRate);
     }
     return basePrice;
   }
@@ -28,14 +29,15 @@ class PriceCalculator {
   static double ps5Price({
     required int hours,
     required int minutes,
-    bool multiplayer = false,
+    int additionalControllers = 0,
   }) {
     double totalHours = hours + (minutes / 60.0);
     // Round up to nearest 15 minutes
     totalHours = (totalHours * 4).ceil() / 4.0;
     double basePrice = totalHours * ps5HourlyRate;
-    if (multiplayer) {
-      basePrice += multiplayerCharge;
+    // Add additional controller charges: Rs 150 per controller (flat rate)
+    if (additionalControllers > 0) {
+      basePrice += (additionalControllers * additionalControllerRate);
     }
     return basePrice;
   }

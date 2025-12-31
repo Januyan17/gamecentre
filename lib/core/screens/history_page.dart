@@ -46,10 +46,7 @@ class _HistoryPageState extends State<HistoryPage> {
               children: [
                 Text(
                   'Date: ${DateFormat('MMM dd, yyyy').format(selectedDate)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 TextButton.icon(
                   onPressed: _pickDate,
@@ -74,18 +71,11 @@ class _HistoryPageState extends State<HistoryPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.history,
-                          size: 64,
-                          color: Colors.grey.shade400,
-                        ),
+                        Icon(Icons.history, size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
                         Text(
                           'No sessions found for this date',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey.shade600,
-                          ),
+                          style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                         ),
                       ],
                     ),
@@ -109,11 +99,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _buildSessionCard(
-    String sessionId,
-    Map<String, dynamic> data,
-    String dateId,
-  ) {
+  Widget _buildSessionCard(String sessionId, Map<String, dynamic> data, String dateId) {
     final customerName = data['customerName'] ?? 'Unknown';
     final totalAmount = (data['totalAmount'] ?? 0).toDouble();
     final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
@@ -136,25 +122,16 @@ class _HistoryPageState extends State<HistoryPage> {
           backgroundColor: Colors.blue,
           child: Text(
             customerName[0].toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
-        title: Text(
-          customerName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: Text(customerName, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Total: Rs ${totalAmount.toStringAsFixed(2)}'),
             if (timeInfo.isNotEmpty)
-              Text(
-                timeInfo,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
+              Text(timeInfo, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ],
         ),
         trailing: Row(
@@ -167,13 +144,7 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed:
-                  () => _deleteSession(
-                    sessionId,
-                    totalAmount,
-                    dateId,
-                    customerName,
-                  ),
+              onPressed: () => _deleteSession(sessionId, totalAmount, dateId, customerName),
               tooltip: 'Delete',
             ),
           ],
@@ -182,10 +153,7 @@ class _HistoryPageState extends State<HistoryPage> {
           if (services.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text(
-                'No services in this session',
-                style: TextStyle(color: Colors.grey),
-              ),
+              child: Text('No services in this session', style: TextStyle(color: Colors.grey)),
             )
           else
             ...services.map((service) {
@@ -193,13 +161,27 @@ class _HistoryPageState extends State<HistoryPage> {
               final price = (service['price'] ?? 0).toDouble();
               String subtitle = 'Rs ${price.toStringAsFixed(2)}';
 
-              final multiplayer = service['multiplayer'] ?? false;
+              // Get additional controllers (support both old multiplayer and new additionalControllers)
+              int additionalControllers = 0;
+              if (service['additionalControllers'] != null) {
+                additionalControllers =
+                    service['additionalControllers'] is int
+                        ? service['additionalControllers'] as int
+                        : int.tryParse(service['additionalControllers'].toString()) ?? 0;
+              } else if (service['multiplayer'] == true || service['multiplayer'] == 'true') {
+                // Backward compatibility: convert old multiplayer to 1 additional controller
+                additionalControllers = 1;
+              }
+
               if (service['hours'] != null && service['minutes'] != null) {
+                final controllerText =
+                    additionalControllers > 0
+                        ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})'
+                        : '';
                 subtitle =
-                    '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                    '${service['hours']}h ${service['minutes']}m$controllerText - Rs ${price.toStringAsFixed(2)}';
               } else if (service['duration'] != null) {
-                subtitle =
-                    '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
+                subtitle = '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
               }
 
               return ListTile(
@@ -208,7 +190,9 @@ class _HistoryPageState extends State<HistoryPage> {
                   type == 'PS5' ? Icons.sports_esports : Icons.videogame_asset,
                   color: type == 'PS5' ? Colors.blue : Colors.purple,
                 ),
-                title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
+                title: Text(
+                  '$type${additionalControllers > 0 ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})' : ''}',
+                ),
                 subtitle: Text(subtitle),
               );
             }).toList(),
@@ -217,11 +201,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  void _editSession(
-    String sessionId,
-    Map<String, dynamic> data,
-    String dateId,
-  ) {
+  void _editSession(String sessionId, Map<String, dynamic> data, String dateId) {
     showDialog(
       context: context,
       builder:
@@ -230,20 +210,15 @@ class _HistoryPageState extends State<HistoryPage> {
             data: data,
             dateId: dateId,
             onUpdated: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Session updated successfully')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Session updated successfully')));
             },
           ),
     );
   }
 
-  void _deleteSession(
-    String sessionId,
-    double amount,
-    String dateId,
-    String customerName,
-  ) {
+  void _deleteSession(String sessionId, double amount, String dateId, String customerName) {
     showDialog(
       context: context,
       builder:
@@ -256,24 +231,15 @@ class _HistoryPageState extends State<HistoryPage> {
               'This action cannot be undone.',
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: () async {
-                  await _sessionService.deleteHistorySession(
-                    dateId,
-                    sessionId,
-                    amount,
-                  );
+                  await _sessionService.deleteHistorySession(dateId, sessionId, amount);
                   if (mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Session deleted successfully'),
-                      ),
-                    );
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('Session deleted successfully')));
                   }
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -311,8 +277,7 @@ class _EditHistorySessionDialog extends StatefulWidget {
   });
 
   @override
-  State<_EditHistorySessionDialog> createState() =>
-      _EditHistorySessionDialogState();
+  State<_EditHistorySessionDialog> createState() => _EditHistorySessionDialogState();
 }
 
 class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
@@ -323,9 +288,7 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(
-      text: widget.data['customerName'] ?? '',
-    );
+    _nameController = TextEditingController(text: widget.data['customerName'] ?? '');
     _services = List<Map<String, dynamic>>.from(widget.data['services'] ?? []);
   }
 
@@ -367,27 +330,23 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
   }
 
   double _getTotal() {
-    return _services.fold<double>(
-      0,
-      (sum, service) => sum + (service['price'] as num).toDouble(),
-    );
+    return _services.fold<double>(0, (sum, service) => sum + (service['price'] as num).toDouble());
   }
 
   Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter customer name')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter customer name')));
       return;
     }
 
     final total = _getTotal();
-    await _sessionService
-        .updateHistorySession(widget.dateId, widget.sessionId, {
-          'customerName': _nameController.text.trim(),
-          'services': _services,
-          'totalAmount': total,
-        });
+    await _sessionService.updateHistorySession(widget.dateId, widget.sessionId, {
+      'customerName': _nameController.text.trim(),
+      'services': _services,
+      'totalAmount': total,
+    });
 
     // Update day totals
     final oldTotal = (widget.data['totalAmount'] ?? 0).toDouble();
@@ -395,19 +354,13 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
 
     if (diff != 0) {
       await FirebaseFirestore.instance.runTransaction((tx) async {
-        final dayRef = FirebaseFirestore.instance
-            .collection('days')
-            .doc(widget.dateId);
+        final dayRef = FirebaseFirestore.instance.collection('days').doc(widget.dateId);
 
         final dayDoc = await tx.get(dayRef);
         if (dayDoc.exists) {
           final dayData = dayDoc.data();
-          final currentTotal =
-              ((dayData as Map<String, dynamic>)?['totalAmount'] ?? 0)
-                  .toDouble();
-          tx.update(dayRef, {
-            'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity),
-          });
+          final currentTotal = ((dayData as Map<String, dynamic>)['totalAmount'] ?? 0).toDouble();
+          tx.update(dayRef, {'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity)});
         }
       });
     }
@@ -433,10 +386,7 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Services:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            const Text('Services:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (_services.isEmpty)
               const Text('No services', style: TextStyle(color: Colors.grey))
@@ -445,18 +395,36 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
                 final service = _services[index];
                 final type = service['type'] ?? 'Unknown';
                 final price = (service['price'] ?? 0).toDouble();
-                final multiplayer = service['multiplayer'] ?? false;
+
+                // Get additional controllers (support both old multiplayer and new additionalControllers)
+                int additionalControllers = 0;
+                if (service['additionalControllers'] != null) {
+                  additionalControllers =
+                      service['additionalControllers'] is int
+                          ? service['additionalControllers'] as int
+                          : int.tryParse(service['additionalControllers'].toString()) ?? 0;
+                } else if (service['multiplayer'] == true || service['multiplayer'] == 'true') {
+                  // Backward compatibility: convert old multiplayer to 1 additional controller
+                  additionalControllers = 1;
+                }
+
                 String subtitle = 'Rs ${price.toStringAsFixed(2)}';
 
                 if (service['hours'] != null && service['minutes'] != null) {
+                  final controllerText =
+                      additionalControllers > 0
+                          ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})'
+                          : '';
                   subtitle =
-                      '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                      '${service['hours']}h ${service['minutes']}m$controllerText - Rs ${price.toStringAsFixed(2)}';
                 }
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   child: ListTile(
-                    title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
+                    title: Text(
+                      '$type${additionalControllers > 0 ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})' : ''}',
+                    ),
                     subtitle: Text(subtitle),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -467,11 +435,7 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
                             onPressed: () => _editService(index),
                           ),
                         IconButton(
-                          icon: const Icon(
-                            Icons.delete,
-                            size: 20,
-                            color: Colors.red,
-                          ),
+                          icon: const Icon(Icons.delete, size: 20, color: Colors.red),
                           onPressed: () => _deleteService(index),
                         ),
                       ],
@@ -489,10 +453,7 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Total:',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   Text(
                     'Rs ${_getTotal().toStringAsFixed(2)}',
                     style: const TextStyle(
@@ -508,10 +469,7 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         ElevatedButton(onPressed: _save, child: const Text('Save')),
       ],
     );
@@ -522,10 +480,7 @@ class _EditServiceTimeDialog extends StatefulWidget {
   final Map<String, dynamic> service;
   final Function(Map<String, dynamic>) onConfirm;
 
-  const _EditServiceTimeDialog({
-    required this.service,
-    required this.onConfirm,
-  });
+  const _EditServiceTimeDialog({required this.service, required this.onConfirm});
 
   @override
   State<_EditServiceTimeDialog> createState() => _EditServiceTimeDialogState();
@@ -534,7 +489,7 @@ class _EditServiceTimeDialog extends StatefulWidget {
 class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
   late int hours;
   late int minutes;
-  late bool multiplayer;
+  late int additionalControllers;
   double price = 0;
 
   @override
@@ -542,7 +497,17 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
     super.initState();
     hours = widget.service['hours'] ?? 0;
     minutes = widget.service['minutes'] ?? 0;
-    multiplayer = widget.service['multiplayer'] ?? false;
+    // Support both old multiplayer and new additionalControllers
+    if (widget.service['additionalControllers'] != null) {
+      additionalControllers =
+          widget.service['additionalControllers'] is int
+              ? widget.service['additionalControllers'] as int
+              : int.tryParse(widget.service['additionalControllers'].toString()) ?? 0;
+    } else if (widget.service['multiplayer'] == true || widget.service['multiplayer'] == 'true') {
+      additionalControllers = 1; // Convert old multiplayer to 1 controller
+    } else {
+      additionalControllers = 0;
+    }
     _calculatePrice();
   }
 
@@ -551,13 +516,13 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
       price = PriceCalculator.ps4Price(
         hours: hours,
         minutes: minutes,
-        multiplayer: multiplayer,
+        additionalControllers: additionalControllers,
       );
     } else if (widget.service['type'] == 'PS5') {
       price = PriceCalculator.ps5Price(
         hours: hours,
         minutes: minutes,
-        multiplayer: multiplayer,
+        additionalControllers: additionalControllers,
       );
     }
     setState(() {});
@@ -592,10 +557,7 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
                       ),
                       Text(
                         '$hours',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
@@ -630,10 +592,7 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
                       ),
                       Text(
                         '$minutes',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
@@ -655,17 +614,60 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
             ],
           ),
           const SizedBox(height: 16),
-          // Multiplayer toggle
-          SwitchListTile(
-            title: const Text('Multiplayer (+Rs 150)'),
-            subtitle: const Text('Add extra console for multiplayer'),
-            value: multiplayer,
-            onChanged: (value) {
-              setState(() {
-                multiplayer = value;
-                _calculatePrice();
-              });
-            },
+          // Additional Controllers
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  'Additional Controllers',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Rs 150 per controller',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: () {
+                        if (additionalControllers > 0) {
+                          setState(() {
+                            additionalControllers--;
+                            _calculatePrice();
+                          });
+                        }
+                      },
+                    ),
+                    Container(
+                      width: 60,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$additionalControllers',
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: () {
+                        setState(() {
+                          additionalControllers++;
+                          _calculatePrice();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Container(
@@ -676,21 +678,19 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
             ),
             child: Column(
               children: [
-                Text(
-                  'Total Time: ${hours}h ${minutes}m',
-                  style: const TextStyle(fontSize: 16),
-                ),
-                if (multiplayer)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Multiplayer: +Rs 150',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
+                Text('Total Time: ${hours}h ${minutes}m', style: const TextStyle(fontSize: 16)),
+                if (additionalControllers > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Additional Controllers: $additionalControllers × Rs 150',
+                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Controller Charge: Rs ${(additionalControllers * 150).toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   'Price: Rs ${price.toStringAsFixed(2)}',
@@ -706,10 +706,7 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         ElevatedButton(
           onPressed:
               (hours == 0 && minutes == 0)
@@ -720,7 +717,7 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
                       'hours': hours,
                       'minutes': minutes,
                       'price': price,
-                      'multiplayer': multiplayer,
+                      'additionalControllers': additionalControllers,
                     });
                   },
           child: const Text('Update'),
