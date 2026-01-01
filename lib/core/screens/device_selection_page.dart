@@ -73,9 +73,9 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
   void _saveDevices() async {
     if (selectedDevices.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select at least one device')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one device')),
+      );
       return;
     }
 
@@ -113,12 +113,16 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
       if (mounted) {
         Navigator.pop(context); // Close loading
-        Navigator.pop(context); // Go back to previous page (SessionDetailPage or Dashboard)
+        Navigator.pop(
+          context,
+        ); // Go back to previous page (SessionDetailPage or Dashboard)
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${selectedDevices.length} device(s) added successfully'),
+            content: Text(
+              '${selectedDevices.length} device(s) added successfully',
+            ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -146,7 +150,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
           if (selectedDevices.isNotEmpty)
             TextButton(
               onPressed: _saveDevices,
-              child: const Text('Add Selected', style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Add Selected',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
         ],
       ),
@@ -163,7 +170,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   icon: const Icon(Icons.sports_esports),
                   label: const Text('Add PS4'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                   ),
                 ),
                 ElevatedButton.icon(
@@ -171,7 +181,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   icon: const Icon(Icons.sports_esports),
                   label: const Text('Add PS5'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
                   ),
                 ),
               ],
@@ -201,7 +214,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         final multiplayer = device['multiplayer'] ?? false;
 
                         return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           child: ListTile(
                             leading: CircleAvatar(child: Text(device['type'])),
                             title: Text(
@@ -216,7 +232,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                                   onPressed: () => _editDevice(index),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
                                   onPressed: () => _removeDevice(index),
                                 ),
                               ],
@@ -243,7 +262,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                     children: [
                       const Text(
                         'Total:',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Text(
                         'Rs ${selectedDevices.fold<double>(0, (sum, device) => sum + (device['price'] as double)).toStringAsFixed(2)}',
@@ -264,7 +286,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                       icon: const Icon(Icons.check_circle, size: 24),
                       label: Text(
                         'Add ${selectedDevices.length} Device${selectedDevices.length != 1 ? 's' : ''} to Session',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -287,7 +312,13 @@ class _TimeCalculatorDialog extends StatefulWidget {
   final int? initialHours;
   final int? initialMinutes;
   final int? initialAdditionalControllers;
-  final Function(int hours, int minutes, double price, int additionalControllers) onConfirm;
+  final Function(
+    int hours,
+    int minutes,
+    double price,
+    int additionalControllers,
+  )
+  onConfirm;
 
   const _TimeCalculatorDialog({
     required this.deviceType,
@@ -306,6 +337,7 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
   late int minutes;
   late int additionalControllers;
   double price = 0;
+  double controllerPrice = 150; // Default, will be fetched from database
 
   @override
   void initState() {
@@ -313,7 +345,14 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     hours = widget.initialHours ?? 0;
     minutes = widget.initialMinutes ?? 0;
     additionalControllers = widget.initialAdditionalControllers ?? 0;
+    _fetchControllerPrice();
     _calculatePrice();
+  }
+
+  void _fetchControllerPrice() async {
+    // Fetch dynamic controller price from database
+    controllerPrice = await PriceCalculator.getAdditionalControllerPrice();
+    setState(() {});
   }
 
   void _calculatePrice() async {
@@ -362,7 +401,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                       ),
                       Text(
                         '$hours',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
@@ -397,7 +439,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                       ),
                       Text(
                         '$minutes',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
@@ -433,9 +478,9 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Rs 150 per controller',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  'Rs ${controllerPrice.toStringAsFixed(0)} per controller',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -457,7 +502,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                       alignment: Alignment.center,
                       child: Text(
                         '$additionalControllers',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     IconButton(
@@ -483,17 +531,26 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
             ),
             child: Column(
               children: [
-                Text('Total Time: ${hours}h ${minutes}m', style: const TextStyle(fontSize: 16)),
+                Text(
+                  'Total Time: ${hours}h ${minutes}m',
+                  style: const TextStyle(fontSize: 16),
+                ),
                 if (additionalControllers > 0) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Additional Controllers: $additionalControllers × Rs 150',
-                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                    'Additional Controllers: $additionalControllers × Rs ${controllerPrice.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green.shade700,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Controller Charge: Rs ${(additionalControllers * 150).toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                    'Controller Charge: Rs ${(additionalControllers * controllerPrice).toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green.shade700,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 8),
@@ -517,13 +574,21 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed:
               (hours == 0 && minutes == 0)
                   ? null
                   : () {
-                    widget.onConfirm(hours, minutes, price, additionalControllers);
+                    widget.onConfirm(
+                      hours,
+                      minutes,
+                      price,
+                      additionalControllers,
+                    );
                   },
           child: const Text('Add'),
         ),

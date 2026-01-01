@@ -189,30 +189,52 @@ class SessionService {
     String sessionId,
     double amount,
   ) async {
-    await FirebaseFirestore.instance.runTransaction((tx) async {
-      // Delete the session
-      tx.delete(
-        FirebaseFirestore.instance
+    try {
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        // STEP 1: DO ALL READS FIRST (Firestore requirement)
+        final dayRef = FirebaseFirestore.instance.collection('days').doc(dateId);
+        final financeRef = FirebaseFirestore.instance.collection('daily_finance').doc(dateId);
+        
+        final dayDoc = await tx.get(dayRef);
+        final financeDoc = await tx.get(financeRef);
+
+        // STEP 2: NOW DO ALL WRITES
+        // Delete the session
+        final sessionRef = FirebaseFirestore.instance
             .collection('days')
             .doc(dateId)
             .collection('sessions')
-            .doc(sessionId),
-      );
+            .doc(sessionId);
+        
+        tx.delete(sessionRef);
 
-      // Update day totals
-      final dayRef = FirebaseFirestore.instance.collection('days').doc(dateId);
-      final dayDoc = await tx.get(dayRef);
-      if (dayDoc.exists) {
-        final dayData = dayDoc.data() as Map<String, dynamic>;
-        final currentTotal = (dayData['totalAmount'] ?? 0).toDouble();
-        final currentUsers = (dayData['totalUsers'] ?? 0);
+        // Update day totals if day exists
+        if (dayDoc.exists) {
+          final dayData = dayDoc.data() as Map<String, dynamic>;
+          final currentTotal = (dayData['totalAmount'] ?? 0).toDouble();
+          final currentUsers = (dayData['totalUsers'] ?? 0);
 
-        tx.update(dayRef, {
-          'totalAmount': (currentTotal - amount).clamp(0.0, double.infinity),
-          'totalUsers': (currentUsers - 1).clamp(0, double.infinity),
-        });
-      }
-    });
+          tx.update(dayRef, {
+            'totalAmount': (currentTotal - amount).clamp(0.0, double.infinity),
+            'totalUsers': (currentUsers - 1).clamp(0, double.infinity),
+          });
+        }
+
+        // Update daily finance if it exists
+        if (financeDoc.exists) {
+          final financeData = financeDoc.data() as Map<String, dynamic>;
+          final currentIncome = (financeData['income'] ?? 0).toDouble();
+          final newIncome = (currentIncome - amount).clamp(0.0, double.infinity);
+
+          tx.update(financeRef, {
+            'income': newIncome,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+    } catch (e) {
+      throw Exception('Failed to delete session: ${e.toString()}');
+    }
   }
 
   CollectionReference sessionsRef() => _fs.activeSessionsRef();

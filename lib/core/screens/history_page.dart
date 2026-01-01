@@ -102,7 +102,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget _buildSessionCard(String sessionId, Map<String, dynamic> data, String dateId) {
     final customerName = data['customerName'] ?? 'Unknown';
     // Use finalAmount if discount exists, otherwise use totalAmount
-    final totalAmount = (data['finalAmount'] ?? data['totalAmount'] ?? 0).toDouble();
+    final displayAmount = (data['finalAmount'] ?? data['totalAmount'] ?? 0).toDouble();
     final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
     final startTime = data['startTime'] as Timestamp?;
     final endTime = data['endTime'] as Timestamp?;
@@ -130,7 +130,7 @@ class _HistoryPageState extends State<HistoryPage> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Total: Rs ${totalAmount.toStringAsFixed(2)}'),
+            Text('Total: Rs ${displayAmount.toStringAsFixed(2)}'),
             if (timeInfo.isNotEmpty)
               Text(timeInfo, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ],
@@ -145,7 +145,7 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
             IconButton(
               icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _deleteSession(sessionId, totalAmount, dateId, customerName),
+              onPressed: () => _deleteSession(sessionId, data, dateId, customerName),
               tooltip: 'Delete',
             ),
           ],
@@ -219,7 +219,15 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  void _deleteSession(String sessionId, double amount, String dateId, String customerName) {
+  void _deleteSession(
+    String sessionId,
+    Map<String, dynamic> data,
+    String dateId,
+    String customerName,
+  ) {
+    // Calculate the correct amount to subtract (finalAmount if discount exists)
+    final displayAmount = (data['finalAmount'] ?? data['totalAmount'] ?? 0).toDouble();
+
     showDialog(
       context: context,
       builder:
@@ -228,7 +236,7 @@ class _HistoryPageState extends State<HistoryPage> {
             content: Text(
               'Are you sure you want to delete this session?\n\n'
               'Customer: $customerName\n'
-              'Amount: Rs ${amount.toStringAsFixed(2)}\n\n'
+              'Amount: Rs ${displayAmount.toStringAsFixed(2)}\n\n'
               'This action cannot be undone. The session will be permanently deleted.',
             ),
             actions: [
@@ -257,83 +265,73 @@ class _HistoryPageState extends State<HistoryPage> {
                   );
 
                   try {
-                    await _sessionService.deleteHistorySession(dateId, sessionId, amount);
+                    await _sessionService.deleteHistorySession(dateId, sessionId, displayAmount);
 
-                    // Wait a bit to ensure Firestore updates
                     await Future.delayed(const Duration(milliseconds: 500));
-
-                    // Close loading dialog using root navigator
-                    if (navigator.canPop()) {
-                      navigator.pop();
-                    }
+                    navigator.pop();
 
                     // Wait a bit for the loading dialog to fully close before showing snackbar
-                    await Future.delayed(const Duration(milliseconds: 200));
+                    await Future.delayed(const Duration(milliseconds: 300));
 
                     // Show success message
-                    if (context.mounted) {
-                      scaffoldMessenger.showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              const Icon(Icons.check_circle, color: Colors.white),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Session deleted successfully',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white,
-                                  ),
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Session deleted successfully\nDaily finance updated',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
                                 ),
                               ),
-                            ],
-                          ),
-                          backgroundColor: Colors.green,
-                          duration: const Duration(seconds: 3),
-                          behavior: SnackBarBehavior.floating,
-                          margin: const EdgeInsets.all(16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ],
                         ),
-                      );
-                    }
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
+                        margin: const EdgeInsets.all(16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    );
                   } catch (e) {
-                    // Close loading dialog using root navigator
-                    if (navigator.canPop()) {
-                      navigator.pop();
-                    }
+                    // Close loading dialog
+                    navigator.pop();
 
                     // Wait a bit for the loading dialog to fully close before showing snackbar
-                    await Future.delayed(const Duration(milliseconds: 200));
+                    await Future.delayed(const Duration(milliseconds: 300));
+                    print(e);
 
-                    if (context.mounted) {
-                      scaffoldMessenger.showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              const Icon(Icons.error, color: Colors.white),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Error deleting session: ${e.toString()}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white,
-                                  ),
+                    scaffoldMessenger.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.error, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Error: ${e.toString()}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white,
                                 ),
                               ),
-                            ],
-                          ),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 4),
-                          behavior: SnackBarBehavior.floating,
-                          margin: const EdgeInsets.all(16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ],
                         ),
-                      );
-                    }
+                        backgroundColor: Colors.red,
+                        duration: const Duration(seconds: 5),
+                        behavior: SnackBarBehavior.floating,
+                        margin: const EdgeInsets.all(16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    );
                   }
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -442,19 +440,32 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
       'totalAmount': total,
     });
 
-    // Update day totals
+    // Update day totals and daily finance
     final oldTotal = (widget.data['totalAmount'] ?? 0).toDouble();
     final diff = total - oldTotal;
 
     if (diff != 0) {
       await FirebaseFirestore.instance.runTransaction((tx) async {
+        // Update day totals
         final dayRef = FirebaseFirestore.instance.collection('days').doc(widget.dateId);
-
         final dayDoc = await tx.get(dayRef);
         if (dayDoc.exists) {
           final dayData = dayDoc.data();
           final currentTotal = ((dayData as Map<String, dynamic>)['totalAmount'] ?? 0).toDouble();
           tx.update(dayRef, {'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity)});
+        }
+
+        // Update daily finance if it exists
+        final financeRef = FirebaseFirestore.instance
+            .collection('daily_finance')
+            .doc(widget.dateId);
+        final financeDoc = await tx.get(financeRef);
+        if (financeDoc.exists) {
+          final financeData = financeDoc.data() as Map<String, dynamic>;
+          final currentIncome = (financeData['income'] ?? 0).toDouble();
+          final newIncome = (currentIncome + diff).clamp(0.0, double.infinity);
+
+          tx.update(financeRef, {'income': newIncome, 'updatedAt': FieldValue.serverTimestamp()});
         }
       });
     }
@@ -585,6 +596,7 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
   late int minutes;
   late int additionalControllers;
   double price = 0;
+  double controllerPrice = 150; // Default, will be fetched from database
 
   @override
   void initState() {
@@ -602,7 +614,14 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
     } else {
       additionalControllers = 0;
     }
+    _fetchControllerPrice();
     _calculatePrice();
+  }
+
+  void _fetchControllerPrice() async {
+    // Fetch dynamic controller price from database
+    controllerPrice = await PriceCalculator.getAdditionalControllerPrice();
+    setState(() {});
   }
 
   void _calculatePrice() async {
@@ -722,9 +741,9 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Rs 150 per controller',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  'Rs ${controllerPrice.toStringAsFixed(0)} per controller',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -776,12 +795,12 @@ class _EditServiceTimeDialogState extends State<_EditServiceTimeDialog> {
                 if (additionalControllers > 0) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Additional Controllers: $additionalControllers × Rs 150',
+                    'Additional Controllers: $additionalControllers × Rs ${controllerPrice.toStringAsFixed(0)}',
                     style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Controller Charge: Rs ${(additionalControllers * 150).toStringAsFixed(2)}',
+                    'Controller Charge: Rs ${(additionalControllers * controllerPrice).toStringAsFixed(2)}',
                     style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
                 ],

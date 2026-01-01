@@ -12,8 +12,18 @@ class PriceCalculator {
   static const double _defaultAdditionalController = 150.0;
   static const double _defaultVr = 700.0;
   static const double _defaultRacingWheel = 500.0;
-  static const Map<int, double> _defaultTheatre = {1: 1500.0, 2: 2000.0, 3: 2500.0, 4: 3000.0};
-  static const Map<int, double> _defaultPersonCharge = {1: 350.0, 2: 350.0, 3: 350.0, 4: 350.0};
+  static const Map<int, double> _defaultTheatre = {
+    1: 1500.0,
+    2: 2000.0,
+    3: 2500.0,
+    4: 3000.0,
+  };
+  static const Map<int, double> _defaultPersonCharge = {
+    1: 350.0,
+    2: 350.0,
+    3: 350.0,
+    4: 350.0,
+  };
 
   static Future<Map<String, dynamic>> _getPrices() async {
     // Return cached prices if still valid
@@ -64,9 +74,11 @@ class PriceCalculator {
     int additionalControllers = 0,
   }) async {
     final prices = await _getPrices();
-    final ps4HourlyRate = (prices['ps4HourlyRate'] ?? _defaultPs4HourlyRate).toDouble();
+    final ps4HourlyRate =
+        (prices['ps4HourlyRate'] ?? _defaultPs4HourlyRate).toDouble();
     final additionalControllerRate =
-        (prices['additionalController'] ?? _defaultAdditionalController).toDouble();
+        (prices['additionalController'] ?? _defaultAdditionalController)
+            .toDouble();
 
     double totalHours = hours + (minutes / 60.0);
     // Round up to nearest 15 minutes
@@ -86,9 +98,11 @@ class PriceCalculator {
     int additionalControllers = 0,
   }) async {
     final prices = await _getPrices();
-    final ps5HourlyRate = (prices['ps5HourlyRate'] ?? _defaultPs5HourlyRate).toDouble();
+    final ps5HourlyRate =
+        (prices['ps5HourlyRate'] ?? _defaultPs5HourlyRate).toDouble();
     final additionalControllerRate =
-        (prices['additionalController'] ?? _defaultAdditionalController).toDouble();
+        (prices['additionalController'] ?? _defaultAdditionalController)
+            .toDouble();
 
     double totalHours = hours + (minutes / 60.0);
     // Round up to nearest 15 minutes
@@ -111,9 +125,12 @@ class PriceCalculator {
     return (prices['vr'] ?? _defaultVr).toDouble();
   }
 
-  static Future<double> theatre({required int hours, required int people}) async {
+  static Future<double> theatre({
+    required int hours,
+    required int people,
+  }) async {
     final prices = await _getPrices();
-    
+
     double base = 0.0;
     switch (hours) {
       case 1:
@@ -136,21 +153,32 @@ class PriceCalculator {
       double personCharge = 0.0;
       switch (hours) {
         case 1:
-          personCharge = (prices['person1hr'] ?? _defaultPersonCharge[1]!).toDouble();
+          personCharge =
+              (prices['person1hr'] ?? _defaultPersonCharge[1]!).toDouble();
           break;
         case 2:
-          personCharge = (prices['person2hr'] ?? _defaultPersonCharge[2]!).toDouble();
+          personCharge =
+              (prices['person2hr'] ?? _defaultPersonCharge[2]!).toDouble();
           break;
         case 3:
-          personCharge = (prices['person3hr'] ?? _defaultPersonCharge[3]!).toDouble();
+          personCharge =
+              (prices['person3hr'] ?? _defaultPersonCharge[3]!).toDouble();
           break;
         case 4:
-          personCharge = (prices['person4hr'] ?? _defaultPersonCharge[4]!).toDouble();
+          personCharge =
+              (prices['person4hr'] ?? _defaultPersonCharge[4]!).toDouble();
           break;
       }
       base += (people - 4) * personCharge;
     }
 
     return base;
+  }
+
+  /// Get additional controller price (standalone method for UI display)
+  static Future<double> getAdditionalControllerPrice() async {
+    final prices = await _getPrices();
+    return (prices['additionalController'] ?? _defaultAdditionalController)
+        .toDouble();
   }
 }
