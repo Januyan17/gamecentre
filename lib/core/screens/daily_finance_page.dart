@@ -269,11 +269,76 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
     }
   }
 
-  void _removeExpense(int index) {
+  Future<void> _removeExpense(int index) async {
+    if (index < 0 || index >= _expenses.length) return;
+
+    final removedAmount = (_expenses[index]['amount'] as num).toDouble();
+    
     setState(() {
-      _totalExpenses -= (_expenses[index]['amount'] as num).toDouble();
+      _totalExpenses -= removedAmount;
       _expenses.removeAt(index);
     });
+
+    // If finance is already saved, update the database immediately
+    if (_isSaved) {
+      try {
+        final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+        final netProfit = _dailyIncome - _totalExpenses;
+
+        // Convert expenses to Firestore format
+        final expensesForFirestore = _expenses.map((expense) {
+          final expenseMap = Map<String, dynamic>.from(expense);
+          if (expenseMap['timestamp'] is Timestamp) {
+            expenseMap['timestamp'] = expenseMap['timestamp'];
+          } else if (expenseMap['timestamp'] is DateTime) {
+            expenseMap['timestamp'] = Timestamp.fromDate(expenseMap['timestamp'] as DateTime);
+          }
+          return expenseMap;
+        }).toList();
+
+        // Get existing savedAt to preserve it
+        final existingDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+        final existingData = existingDoc.data();
+        dynamic savedAt = FieldValue.serverTimestamp();
+        if (existingData != null && existingData['savedAt'] != null) {
+          savedAt = existingData['savedAt'];
+        }
+
+        // Update the database immediately
+        await _firestore.collection('daily_finance').doc(dateId).update({
+          'expenses': expensesForFirestore,
+          'totalExpenses': _totalExpenses,
+          'netProfit': netProfit,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        // Update local updatedAt timestamp
+        final updatedDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+        if (updatedDoc.exists) {
+          final updatedData = updatedDoc.data();
+          if (updatedData != null && updatedData['updatedAt'] != null) {
+            if (updatedData['updatedAt'] is Timestamp) {
+              _updatedAt = updatedData['updatedAt'] as Timestamp;
+            }
+          }
+        }
+
+        if (mounted) {
+          setState(() {}); // Refresh UI to show updated timestamp
+        }
+      } catch (e) {
+        // If update fails, show error but keep the local deletion
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating database: $e'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _saveFinance() async {
