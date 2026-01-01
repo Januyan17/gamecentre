@@ -568,6 +568,16 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                                         : '';
                                 subtitle =
                                     '${hours}h ${minutes}m$controllerText - Rs ${price.toStringAsFixed(2)}';
+                              } else if (service['slots'] != null && service['games'] != null) {
+                                // VR Game with slots
+                                final slots = service['slots'] is int 
+                                    ? service['slots'] as int 
+                                    : int.tryParse(service['slots'].toString()) ?? 0;
+                                final games = service['games'] is int 
+                                    ? service['games'] as int 
+                                    : int.tryParse(service['games'].toString()) ?? 0;
+                                subtitle =
+                                    '$slots slot${slots != 1 ? 's' : ''} ($games games) - Rs ${price.toStringAsFixed(2)}';
                               } else if (service['duration'] != null) {
                                 subtitle =
                                     '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';

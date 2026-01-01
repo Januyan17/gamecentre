@@ -299,7 +299,7 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                             ),
                             const SizedBox(height: 16),
                             _buildTextField(
-                              label: 'VR Game (20 min)',
+                              label: 'VR Game Slot (2 games per slot)',
                               controller: _vrController,
                             ),
                             _buildTextField(

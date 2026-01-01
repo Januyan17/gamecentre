@@ -102,7 +102,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                           TextField(
                             controller: _mobileControllers[index],
                             keyboardType: TextInputType.phone,
-                            maxLength: 10,
+                            maxLength: 9,
                             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                             decoration: InputDecoration(
                               labelText: 'Mobile Number',
@@ -110,12 +110,12 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                               prefixIcon: const Icon(Icons.phone),
                               prefixText: '+94 ',
                               counterText: '',
-                              helperText: 'Enter 10 digit mobile number',
+                              helperText: 'Enter 9 digit mobile number (without leading 0)',
                               helperMaxLines: 1,
                               errorText:
                                   _mobileControllers[index].text.isNotEmpty &&
-                                          _mobileControllers[index].text.length != 10
-                                      ? 'Mobile number must be 10 digits'
+                                          _mobileControllers[index].text.length != 9
+                                      ? 'Mobile number must be 9 digits (without leading 0)'
                                       : null,
                             ),
                             onChanged: (value) {
@@ -170,10 +170,10 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                   break;
                                 }
 
-                                if (mobile.isNotEmpty && mobile.length != 10) {
+                                if (mobile.isNotEmpty && mobile.length != 9) {
                                   hasError = true;
                                   errorMessage =
-                                      'Mobile number for customer ${i + 1} must be 10 digits';
+                                      'Mobile number for customer ${i + 1} must be 9 digits (without leading 0)';
                                   break;
                                 }
                               }

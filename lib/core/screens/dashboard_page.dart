@@ -602,6 +602,16 @@ class _DashboardPageState extends State<DashboardPage> {
                                   if (service['hours'] != null && service['minutes'] != null) {
                                     subtitle =
                                         '${service['hours']}h ${service['minutes']}m${multiplayer ? ' (Multiplayer)' : ''} - Rs ${price.toStringAsFixed(2)}';
+                                  } else if (service['slots'] != null && service['games'] != null) {
+                                    // VR Game with slots
+                                    final slots = service['slots'] is int 
+                                        ? service['slots'] as int 
+                                        : int.tryParse(service['slots'].toString()) ?? 0;
+                                    final games = service['games'] is int 
+                                        ? service['games'] as int 
+                                        : int.tryParse(service['games'].toString()) ?? 0;
+                                    subtitle =
+                                        '$slots slot${slots != 1 ? 's' : ''} ($games games) - Rs ${price.toStringAsFixed(2)}';
                                   } else if (service['duration'] != null) {
                                     subtitle =
                                         '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
