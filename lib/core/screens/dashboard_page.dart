@@ -298,7 +298,18 @@ class _DashboardPageState extends State<DashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RowZow Dashboard'),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/rowzow.jpeg',
+              height: 40,
+              width: 40,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 12),
+            const Text('RowZow Dashboard'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
