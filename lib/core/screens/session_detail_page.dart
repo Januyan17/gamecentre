@@ -531,10 +531,15 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                               // Get additional controllers (support both old multiplayer and new additionalControllers)
                               int additionalControllers = 0;
                               if (service['additionalControllers'] != null) {
-                                additionalControllers = service['additionalControllers'] is int
-                                    ? service['additionalControllers'] as int
-                                    : int.tryParse(service['additionalControllers'].toString()) ?? 0;
-                              } else if (service['multiplayer'] == true || service['multiplayer'] == 'true') {
+                                additionalControllers =
+                                    service['additionalControllers'] is int
+                                        ? service['additionalControllers'] as int
+                                        : int.tryParse(
+                                              service['additionalControllers'].toString(),
+                                            ) ??
+                                            0;
+                              } else if (service['multiplayer'] == true ||
+                                  service['multiplayer'] == 'true') {
                                 // Backward compatibility: convert old multiplayer to 1 additional controller
                                 additionalControllers = 1;
                               }
@@ -557,9 +562,10 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
 
                               String subtitle = 'Rs ${price.toStringAsFixed(2)}';
                               if (hours > 0 || minutes > 0) {
-                                final controllerText = additionalControllers > 0
-                                    ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})'
-                                    : '';
+                                final controllerText =
+                                    additionalControllers > 0
+                                        ? ' (+$additionalControllers Controller${additionalControllers > 1 ? 's' : ''})'
+                                        : '';
                                 subtitle =
                                     '${hours}h ${minutes}m$controllerText - Rs ${price.toStringAsFixed(2)}';
                               } else if (service['duration'] != null) {
@@ -762,9 +768,10 @@ class _EditDeviceDialogState extends State<_EditDeviceDialog> {
     minutes = widget.device['minutes'] ?? 0;
     // Support both old multiplayer and new additionalControllers
     if (widget.device['additionalControllers'] != null) {
-      additionalControllers = widget.device['additionalControllers'] is int
-          ? widget.device['additionalControllers'] as int
-          : int.tryParse(widget.device['additionalControllers'].toString()) ?? 0;
+      additionalControllers =
+          widget.device['additionalControllers'] is int
+              ? widget.device['additionalControllers'] as int
+              : int.tryParse(widget.device['additionalControllers'].toString()) ?? 0;
     } else if (widget.device['multiplayer'] == true || widget.device['multiplayer'] == 'true') {
       additionalControllers = 1; // Convert old multiplayer to 1 controller
     } else {

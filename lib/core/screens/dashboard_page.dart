@@ -393,6 +393,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         final data = doc.data() as Map<String, dynamic>;
                         final customerName = data['customerName'] ?? 'Unknown';
                         final totalAmount = (data['totalAmount'] ?? 0).toDouble();
+                        final discount = (data['discount'] ?? 0).toDouble();
+                        final finalAmount = (data['finalAmount'] ?? totalAmount).toDouble();
 
                         // Properly convert services from Firestore
                         final servicesList = data['services'];
@@ -422,7 +424,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
-                          key: ValueKey('${doc.id}-${services.length}-${totalAmount}'),
+                          key: ValueKey('${doc.id}-${services.length}-${totalAmount}-${discount}-${finalAmount}'),
                           child: ExpansionTile(
                             initiallyExpanded: services.isNotEmpty,
                             leading: CircleAvatar(
@@ -438,76 +440,148 @@ class _DashboardPageState extends State<DashboardPage> {
                             title: Text(
                               customerName,
                               style: const TextStyle(fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Total: Rs ${totalAmount.toStringAsFixed(2)}'),
-                                if (services.isNotEmpty)
+                                // Show total amount with discount if applicable
+                                if (discount > 0) ...[
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          'Total: Rs ${totalAmount.toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            decoration: TextDecoration.lineThrough,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.discount,
+                                        size: 14,
+                                        color: Colors.green.shade700,
+                                      ),
+                                      Text(
+                                        'Rs ${discount.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.red.shade700,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    '${services.length} service${services.length != 1 ? 's' : ''}',
+                                    'Final: Rs ${finalAmount.toStringAsFixed(2)}',
                                     style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blue.shade700,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ] else
+                                  Text(
+                                    'Total: Rs ${totalAmount.toStringAsFixed(2)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                if (services.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      '${services.length} service${services.length != 1 ? 's' : ''}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 if (timeInfo.isNotEmpty)
-                                  Text(
-                                    timeInfo,
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      timeInfo,
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                               ],
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (services.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.shade100,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Text(
-                                      '${services.length}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.green.shade800,
-                                        fontWeight: FontWeight.bold,
+                            trailing: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 120),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (services.isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade100,
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                    ),
-                                  ),
-                                const SizedBox(width: 4),
-                                IconButton(
-                                  icon: const Icon(Icons.open_in_new, size: 18),
-                                  onPressed: () async {
-                              // Load the session first
-                              await context.read<SessionProvider>().loadSession(doc.id);
-                              // Navigate to session detail
-                              if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const SessionDetailPage(),
+                                      child: Text(
+                                        '${services.length}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.green.shade800,
+                                          fontWeight: FontWeight.bold,
                                         ),
-                                );
-                              }
-                            },
-                                  tooltip: 'View Details',
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                  onPressed:
-                                      () => _showDeleteConfirmation(
-                                        context,
-                                        doc.id,
-                                        customerName,
-                                        totalAmount,
                                       ),
-                                  tooltip: 'Delete Session',
-                                ),
-                              ],
+                                    ),
+                                  const SizedBox(width: 2),
+                                  IconButton(
+                                    icon: const Icon(Icons.open_in_new, size: 18),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () async {
+                                      // Load the session first
+                                      await context.read<SessionProvider>().loadSession(doc.id);
+                                      // Navigate to session detail
+                                      if (context.mounted) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => const SessionDetailPage(),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    tooltip: 'View Details',
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed:
+                                        () => _showDeleteConfirmation(
+                                          context,
+                                          doc.id,
+                                          customerName,
+                                          totalAmount,
+                                        ),
+                                    tooltip: 'Delete Session',
+                                  ),
+                                ],
+                              ),
                             ),
                             children: [
                               if (services.isEmpty)
@@ -548,8 +622,16 @@ class _DashboardPageState extends State<DashboardPage> {
                                               ? Colors.purple
                                               : Colors.grey,
                                     ),
-                                    title: Text('$type${multiplayer ? ' (Multiplayer)' : ''}'),
-                                    subtitle: Text(subtitle),
+                                    title: Text(
+                                      '$type${multiplayer ? ' (Multiplayer)' : ''}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: Text(
+                                      subtitle,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   );
                                 }).toList(),
                             ],
