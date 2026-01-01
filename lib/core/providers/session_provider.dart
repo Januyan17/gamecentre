@@ -110,15 +110,29 @@ class SessionProvider extends ChangeNotifier {
 
       // Schedule notification if end time is calculated
       if (endTime != null) {
+        debugPrint('Attempting to schedule notification:');
+        debugPrint('  Service Type: $serviceType');
+        debugPrint('  Service ID: $serviceId');
+        debugPrint('  Start Time: ${service['startTime']}');
+        debugPrint('  End Time: $endTime');
+        debugPrint('  Current Time: ${DateTime.now()}');
+        
         await NotificationService().scheduleServiceTimeUpNotification(
           serviceId: serviceId,
           serviceType: serviceType,
           customerName: customerName,
           endTime: endTime,
         );
+        
+        debugPrint('✅ Notification scheduling completed for $serviceType');
+      } else {
+        debugPrint('⚠️ Cannot schedule notification: endTime is null');
+        debugPrint('  Service Type: $serviceType');
+        debugPrint('  Service Data: $service');
       }
-    } catch (e) {
-      debugPrint('Error scheduling notification: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error scheduling notification: $e');
+      debugPrint('Stack trace: $stackTrace');
       // Don't throw - notification failure shouldn't break service addition
     }
   }

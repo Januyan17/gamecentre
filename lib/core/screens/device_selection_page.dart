@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/session_provider.dart';
 import '../services/price_calculator.dart';
+import '../services/notification_service.dart';
 
 class DeviceSelectionPage extends StatefulWidget {
   const DeviceSelectionPage({super.key});
@@ -113,7 +114,7 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
       if (mounted) {
         Navigator.pop(context); // Close loading
         Navigator.pop(context); // Go back to previous page (SessionDetailPage or Dashboard)
-        
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -240,7 +241,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const Text(
+                        'Total:',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
                       Text(
                         'Rs ${selectedDevices.fold<double>(0, (sum, device) => sum + (device['price'] as double)).toStringAsFixed(2)}',
                         style: const TextStyle(
@@ -514,7 +518,7 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
+        ElevatedButton(
           onPressed:
               (hours == 0 && minutes == 0)
                   ? null

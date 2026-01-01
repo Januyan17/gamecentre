@@ -2,6 +2,48 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+
+/// Top-level callback for Android Alarm Manager (MUST be outside class)
+@pragma('vm:entry-point')
+void alarmCallback(int id, Map<String, dynamic> params) {
+  // Show notification immediately
+  _showNotificationFromCallback(id, params['title'], params['body']);
+}
+
+/// Show notification from callback - top-level function
+@pragma('vm:entry-point')
+Future<void> _showNotificationFromCallback(int id, String title, String body) async {
+  final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
+  
+  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+    'service_time_up',
+    'Service Time Up',
+    channelDescription: 'Notifications when service time slots are completed',
+    importance: Importance.max,
+    priority: Priority.max,
+    playSound: true,
+    enableVibration: true,
+    category: AndroidNotificationCategory.alarm,
+    visibility: NotificationVisibility.public,
+  );
+
+  const NotificationDetails notificationDetails = NotificationDetails(
+    android: androidDetails,
+  );
+
+  try {
+    await notifications.show(
+      id,
+      title,
+      body,
+      notificationDetails,
+    );
+  } catch (e) {
+    debugPrint('Error showing notification: $e');
+  }
+}
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -10,6 +52,8 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  static const platform = MethodChannel('com.company.rowzow/battery');
+  static const alarmChannel = MethodChannel('com.company.rowzow/alarm');
 
   /// Initialize the notification service
   Future<void> initialize() async {
@@ -17,12 +61,14 @@ class NotificationService {
 
     // Initialize timezone
     tz.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('Asia/Kolkata')); // Adjust to your timezone
+    tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+
+    // Initialize Android Alarm Manager
+    await AndroidAlarmManager.initialize();
 
     // Android initialization settings
     const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    // iOS initialization settings (optional, for iOS support)
     const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -41,26 +87,70 @@ class NotificationService {
 
     // Request permissions for Android 13+
     if (defaultTargetPlatform == TargetPlatform.android) {
-      await _notifications
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      final androidImplementation = _notifications
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      
+      if (androidImplementation != null) {
+        await androidImplementation.requestNotificationsPermission();
+        
+        try {
+          await androidImplementation.requestExactAlarmsPermission();
+        } catch (e) {
+          debugPrint('Could not request exact alarm permission: $e');
+        }
+        
+        try {
+          await androidImplementation.createNotificationChannel(
+            const AndroidNotificationChannel(
+              'service_time_up',
+              'Service Time Up',
+              description: 'Notifications when service time slots are completed with sound',
+              importance: Importance.max,
+              playSound: true,
+              enableVibration: true,
+              showBadge: true,
+            ),
+          );
+        } catch (e) {
+          debugPrint('Error creating notification channel: $e');
+        }
+      }
     }
 
     _initialized = true;
+    
+    // Request battery optimization exemption
+    await requestBatteryOptimizationExemption();
+  }
+
+  /// Request battery optimization exemption
+  Future<void> requestBatteryOptimizationExemption() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await platform.invokeMethod('requestBatteryOptimization');
+      } catch (e) {
+        debugPrint('Error requesting battery optimization exemption: $e');
+      }
+    }
+  }
+  
+  /// Open auto-start settings
+  Future<void> openAutoStartSettings() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await platform.invokeMethod('openAutoStartSettings');
+      } catch (e) {
+        debugPrint('Error opening auto-start settings: $e');
+      }
+    }
   }
 
   /// Handle notification tap
   void _onNotificationTapped(NotificationResponse response) {
     // Handle notification tap if needed
-    debugPrint('Notification tapped: ${response.payload}');
   }
 
-  /// Schedule a notification for when a service time slot completes
-  /// 
-  /// [serviceId] - Unique ID for the service
-  /// [serviceType] - Type of service (PS4, PS5, Theatre, Simulator)
-  /// [customerName] - Name of the customer
-  /// [endTime] - When the service will end (DateTime)
+  /// Schedule a notification using android_alarm_manager_plus
   Future<void> scheduleServiceTimeUpNotification({
     required String serviceId,
     required String serviceType,
@@ -71,61 +161,45 @@ class NotificationService {
       await initialize();
     }
 
-    // Only schedule for PS4, PS5, Theatre, and Car Simulator (not VR)
     if (serviceType == 'VR') {
       return;
     }
 
-    // Ensure endTime is in the future
     if (endTime.isBefore(DateTime.now())) {
       debugPrint('Cannot schedule notification in the past: $endTime');
       return;
     }
 
-    // Convert to local timezone
-    final scheduledDate = tz.TZDateTime.from(endTime, tz.local);
+    final notificationId = serviceId.hashCode.abs();
+    final delay = endTime.difference(DateTime.now());
 
-    // Create notification details
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'service_time_up',
-      'Service Time Up',
-      channelDescription: 'Notifications when service time slots are completed',
-      importance: Importance.high,
-      priority: Priority.high,
-      showWhen: true,
-      enableVibration: true,
-      playSound: true,
-    );
-
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-    );
-
-    const NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    // Schedule the notification
-    await _notifications.zonedSchedule(
-      serviceId.hashCode, // Use hash code as notification ID
-      'Time Up: $serviceType',
-      '$serviceType session for $customerName has completed',
-      scheduledDate,
-      notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
-
-    debugPrint('Scheduled notification for $serviceType at ${scheduledDate.toString()}');
+    try {
+      await AndroidAlarmManager.oneShot(
+        delay,
+        notificationId,
+        alarmCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: false,
+        params: {
+          'title': 'Time Up: $serviceType',
+          'body': '$serviceType session for $customerName has completed',
+        },
+      );
+    } catch (e) {
+      debugPrint('Error scheduling alarm: $e');
+    }
   }
 
   /// Cancel a scheduled notification
   Future<void> cancelNotification(String serviceId) async {
-    await _notifications.cancel(serviceId.hashCode);
+    final notificationId = serviceId.hashCode.abs();
+    try {
+      await AndroidAlarmManager.cancel(notificationId);
+      await _notifications.cancel(notificationId);
+    } catch (e) {
+      debugPrint('Error canceling notification: $e');
+    }
   }
 
   /// Cancel all notifications
@@ -146,20 +220,25 @@ class NotificationService {
       'service_time_up',
       'Service Time Up',
       channelDescription: 'Notifications when service time slots are completed',
-      importance: Importance.high,
-      priority: Priority.high,
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
     );
 
     const NotificationDetails notificationDetails = NotificationDetails(
       android: androidDetails,
     );
 
-    await _notifications.show(
-      DateTime.now().millisecondsSinceEpoch % 100000,
-      title,
-      body,
-      notificationDetails,
-    );
+    try {
+      await _notifications.show(
+        DateTime.now().millisecondsSinceEpoch % 100000,
+        title,
+        body,
+        notificationDetails,
+      );
+    } catch (e) {
+      debugPrint('Error showing immediate notification: $e');
+    }
   }
 }
-

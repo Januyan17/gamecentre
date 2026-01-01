@@ -11,6 +11,9 @@ import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
 import 'daily_finance_page.dart';
 import 'finance_history_page.dart';
+import '../services/notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'miui_setup_dialog.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -27,6 +30,111 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _performDailyReset();
+    _startNotificationChecker();
+    _showMiuiSetupDialogIfNeeded();
+  }
+
+  /// Show MIUI setup dialog on first launch
+  Future<void> _showMiuiSetupDialogIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasShownDialog = prefs.getBool('miui_setup_shown') ?? false;
+
+    if (!hasShownDialog && mounted) {
+      // Wait a bit for the UI to settle
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (mounted) {
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const MiuiSetupDialog(),
+        );
+
+        await prefs.setBool('miui_setup_shown', true);
+      }
+    }
+  }
+
+  /// Start a periodic check for service time completion
+  /// This is a workaround for Android's exact alarm restrictions
+  void _startNotificationChecker() {
+    // Check every 30 seconds if any services have completed
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) {
+        _checkServiceTimes();
+        _startNotificationChecker(); // Schedule next check
+      }
+    });
+  }
+
+  /// Check if any active services have completed and show notifications
+  Future<void> _checkServiceTimes() async {
+    try {
+      final provider = context.read<SessionProvider>();
+      if (provider.activeSessionId == null) return;
+
+      final sessionDoc = await provider.sessionsRef().doc(provider.activeSessionId!).get();
+      if (!sessionDoc.exists) return;
+
+      final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+      if (sessionData == null) return;
+
+      final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+      final customerName = sessionData['customerName'] as String? ?? 'Customer';
+      final now = DateTime.now();
+
+      for (var service in services) {
+        final serviceType = service['type'] as String? ?? '';
+        if (serviceType == 'VR') continue;
+
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr == null) continue;
+
+        DateTime? endTime;
+        if (serviceType == 'PS4' || serviceType == 'PS5') {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 0;
+          final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+          endTime = startTime.add(Duration(hours: hours, minutes: minutes));
+        } else if (serviceType == 'Theatre') {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 1;
+          endTime = startTime.add(Duration(hours: hours));
+        } else if (serviceType == 'Simulator') {
+          final startTime = DateTime.parse(startTimeStr);
+          final duration = (service['duration'] as num?)?.toInt() ?? 30;
+          endTime = startTime.add(Duration(minutes: duration));
+        }
+
+        // Check if time is up (within last 30 seconds to avoid duplicate notifications)
+        if (endTime != null) {
+          final timeDiff = now.difference(endTime);
+          if (timeDiff.inSeconds >= 0 && timeDiff.inSeconds <= 30) {
+            // Time is up! Show notification immediately
+            final serviceId = service['id'] as String? ?? '';
+            final notificationKey = 'time_up_${serviceId}';
+
+            // Check if we've already notified for this service
+            final prefs = await SharedPreferences.getInstance();
+            final alreadyNotified = prefs.getBool(notificationKey) ?? false;
+            if (!alreadyNotified) {
+              // Show immediate notification
+              await NotificationService().showImmediateNotification(
+                title: 'Time Up: $serviceType',
+                body: '$serviceType session for $customerName has completed',
+              );
+
+              // Mark as notified
+              await prefs.setBool(notificationKey, true);
+
+              debugPrint('🔔 Time-up notification shown for $serviceType');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking service times: $e');
+    }
   }
 
   Future<void> _performDailyReset() async {
@@ -34,7 +142,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _hasCheckedReset = true;
       // Perform daily reset check in background
       await _dailyResetService.checkAndPerformDailyReset();
-      
+
       // Reset provider state after daily reset
       if (mounted) {
         context.read<SessionProvider>().resetState();
@@ -45,14 +153,15 @@ class _DashboardPageState extends State<DashboardPage> {
   void _showPasswordDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => PasswordDialog(
-        onSuccess: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const PricingSettingsPage()),
-          );
-        },
-      ),
+      builder:
+          (context) => PasswordDialog(
+            onSuccess: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PricingSettingsPage()),
+              );
+            },
+          ),
     );
   }
 
@@ -134,9 +243,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         backgroundColor: Colors.green,
                         duration: const Duration(seconds: 3),
                         behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         margin: const EdgeInsets.all(16),
                       ),
                     );
@@ -171,9 +278,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         backgroundColor: Colors.red,
                         duration: const Duration(seconds: 4),
                         behavior: SnackBarBehavior.floating,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         margin: const EdgeInsets.all(16),
                       ),
                     );
@@ -193,7 +298,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gaming Center Dashboard'),
+        title: const Text('RowZow Dashboard'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
