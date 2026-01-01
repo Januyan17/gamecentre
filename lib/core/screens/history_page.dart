@@ -433,45 +433,134 @@ class _EditHistorySessionDialogState extends State<_EditHistorySessionDialog> {
       return;
     }
 
-    final total = _getTotal();
-    await _sessionService.updateHistorySession(widget.dateId, widget.sessionId, {
-      'customerName': _nameController.text.trim(),
-      'services': _services,
-      'totalAmount': total,
-    });
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
 
-    // Update day totals and daily finance
-    final oldTotal = (widget.data['totalAmount'] ?? 0).toDouble();
-    final diff = total - oldTotal;
+    try {
+      final total = _getTotal();
 
-    if (diff != 0) {
-      await FirebaseFirestore.instance.runTransaction((tx) async {
-        // Update day totals
-        final dayRef = FirebaseFirestore.instance.collection('days').doc(widget.dateId);
-        final dayDoc = await tx.get(dayRef);
-        if (dayDoc.exists) {
-          final dayData = dayDoc.data();
-          final currentTotal = ((dayData as Map<String, dynamic>)['totalAmount'] ?? 0).toDouble();
-          tx.update(dayRef, {'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity)});
-        }
+      // Calculate the old amount (use finalAmount if discount exists, otherwise totalAmount)
+      final oldTotal = (widget.data['finalAmount'] ?? widget.data['totalAmount'] ?? 0).toDouble();
+      final diff = total - oldTotal;
 
-        // Update daily finance if it exists
-        final financeRef = FirebaseFirestore.instance
-            .collection('daily_finance')
-            .doc(widget.dateId);
-        final financeDoc = await tx.get(financeRef);
-        if (financeDoc.exists) {
-          final financeData = financeDoc.data() as Map<String, dynamic>;
-          final currentIncome = (financeData['income'] ?? 0).toDouble();
-          final newIncome = (currentIncome + diff).clamp(0.0, double.infinity);
-
-          tx.update(financeRef, {'income': newIncome, 'updatedAt': FieldValue.serverTimestamp()});
-        }
+      // Update the session first
+      await _sessionService.updateHistorySession(widget.dateId, widget.sessionId, {
+        'customerName': _nameController.text.trim(),
+        'services': _services,
+        'totalAmount': total,
+        // If there was a discount, recalculate finalAmount
+        if (widget.data['discount'] != null && widget.data['discount'] > 0)
+          'finalAmount': (total - (widget.data['discount'] as num).toDouble()).clamp(
+            0.0,
+            double.infinity,
+          ),
       });
-    }
 
-    widget.onUpdated();
-    if (mounted) Navigator.pop(context);
+      // Update day totals and daily finance if amount changed
+      if (diff != 0) {
+        await FirebaseFirestore.instance.runTransaction((tx) async {
+          // STEP 1: DO ALL READS FIRST
+          final dayRef = FirebaseFirestore.instance.collection('days').doc(widget.dateId);
+          final financeRef = FirebaseFirestore.instance
+              .collection('daily_finance')
+              .doc(widget.dateId);
+
+          final dayDoc = await tx.get(dayRef);
+          final financeDoc = await tx.get(financeRef);
+
+          // STEP 2: NOW DO ALL WRITES
+          // Update day totals
+          if (dayDoc.exists) {
+            final dayData = dayDoc.data() as Map<String, dynamic>;
+            final currentTotal = (dayData['totalAmount'] ?? 0).toDouble();
+            tx.update(dayRef, {'totalAmount': (currentTotal + diff).clamp(0.0, double.infinity)});
+          }
+
+          // Update daily finance if it exists
+          if (financeDoc.exists) {
+            final financeData = financeDoc.data() as Map<String, dynamic>;
+            final currentIncome = (financeData['income'] ?? 0).toDouble();
+            final newIncome = (currentIncome + diff).clamp(0.0, double.infinity);
+
+            tx.update(financeRef, {'income': newIncome, 'updatedAt': FieldValue.serverTimestamp()});
+          }
+        });
+      }
+
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Close edit dialog
+      if (mounted) Navigator.pop(context);
+
+      // Show success message
+      if (mounted) {
+        widget.onUpdated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    diff != 0
+                        ? 'Session updated successfully\nDaily finance updated'
+                        : 'Session updated successfully',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Error updating session: ${e.toString()}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    }
   }
 
   @override
