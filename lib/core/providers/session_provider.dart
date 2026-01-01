@@ -122,6 +122,7 @@ class SessionProvider extends ChangeNotifier {
           serviceType: serviceType,
           customerName: customerName,
           endTime: endTime,
+          sessionId: activeSessionId!,
         );
         
         debugPrint('✅ Notification scheduling completed for $serviceType');
@@ -193,6 +194,14 @@ class SessionProvider extends ChangeNotifier {
   Future<void> closeSession() async {
     if (activeSessionId == null) return;
     
+    // Cancel all notifications for all services in this session BEFORE closing
+    for (var service in services) {
+      final serviceId = service['id'] as String?;
+      if (serviceId != null) {
+        await NotificationService().cancelNotification(serviceId);
+      }
+    }
+    
     // Get the final amount (with discount if applied)
     final doc = await _service.sessionsRef().doc(activeSessionId!).get();
     double finalTotal = currentTotal;
@@ -209,6 +218,16 @@ class SessionProvider extends ChangeNotifier {
   }
 
   Future<void> deleteActiveSession(String sessionId) async {
+    // Cancel all notifications for all services in this session BEFORE deleting
+    if (activeSessionId == sessionId) {
+      for (var service in services) {
+        final serviceId = service['id'] as String?;
+        if (serviceId != null) {
+          await NotificationService().cancelNotification(serviceId);
+        }
+      }
+    }
+    
     await _service.deleteActiveSession(sessionId);
     // If the deleted session was the active one, clear it
     if (activeSessionId == sessionId) {

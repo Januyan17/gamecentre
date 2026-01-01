@@ -4,12 +4,62 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Top-level callback for Android Alarm Manager (MUST be outside class)
 @pragma('vm:entry-point')
 void alarmCallback(int id, Map<String, dynamic> params) {
-  // Show notification immediately
-  _showNotificationFromCallback(id, params['title'], params['body']);
+  // Check if session is still active before showing notification
+  _checkAndShowNotification(id, params);
+}
+
+/// Check if session is still active and show notification only if active
+@pragma('vm:entry-point')
+Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) async {
+  try {
+    // Extract serviceId from params (we need to pass it when scheduling)
+    final serviceId = params['serviceId'] as String?;
+    final sessionId = params['sessionId'] as String?;
+    
+    if (serviceId == null || sessionId == null) {
+      // If we don't have session info, don't show notification
+      return;
+    }
+    
+    // Check if session is still active in Firestore
+    final firestore = FirebaseFirestore.instance;
+    final sessionDoc = await firestore.collection('active_sessions').doc(sessionId).get();
+    
+    // Only show notification if session is still active
+    if (!sessionDoc.exists) {
+      // Session has been closed/ended, don't show notification
+      return;
+    }
+    
+    final sessionData = sessionDoc.data();
+    if (sessionData == null) {
+      return;
+    }
+    
+    // Check if the service still exists in the session
+    final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+    final serviceExists = services.any((service) => 
+      (service['id'] as String? ?? '') == serviceId
+    );
+    
+    if (!serviceExists) {
+      // Service has been removed, don't show notification
+      return;
+    }
+    
+    // Session is still active and service exists, show notification
+    final title = params['title'] as String? ?? 'Time Up';
+    final body = params['body'] as String? ?? 'Service time completed';
+    await _showNotificationFromCallback(id, title, body);
+  } catch (e) {
+    debugPrint('Error checking session status: $e');
+    // On error, don't show notification to be safe
+  }
 }
 
 /// Show notification from callback - top-level function
@@ -156,6 +206,7 @@ class NotificationService {
     required String serviceType,
     required String customerName,
     required DateTime endTime,
+    required String sessionId,
   }) async {
     if (!_initialized) {
       await initialize();
@@ -182,6 +233,8 @@ class NotificationService {
         wakeup: true,
         rescheduleOnReboot: false,
         params: {
+          'serviceId': serviceId,
+          'sessionId': sessionId,
           'title': 'Time Up: $serviceType',
           'body': '$serviceType session for $customerName has completed',
         },
