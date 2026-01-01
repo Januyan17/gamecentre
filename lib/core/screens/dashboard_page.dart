@@ -482,18 +482,18 @@ class _DashboardPageState extends State<DashboardPage> {
                                 IconButton(
                                   icon: const Icon(Icons.open_in_new, size: 18),
                                   onPressed: () async {
-                                    // Load the session first
-                                    await context.read<SessionProvider>().loadSession(doc.id);
-                                    // Navigate to session detail
-                                    if (context.mounted) {
-                                      Navigator.push(
-                                        context,
+                              // Load the session first
+                              await context.read<SessionProvider>().loadSession(doc.id);
+                              // Navigate to session detail
+                              if (context.mounted) {
+                                Navigator.push(
+                                  context,
                                         MaterialPageRoute(
                                           builder: (_) => const SessionDetailPage(),
                                         ),
-                                      );
-                                    }
-                                  },
+                                );
+                              }
+                            },
                                   tooltip: 'View Details',
                                 ),
                                 IconButton(
@@ -567,31 +567,31 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: Column(
                   children: [
                     Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const CreateSessionPage()),
-                              );
-                            },
-                            icon: const Icon(Icons.add),
-                            label: const Text('New Session'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const HistoryPage()),
-                              );
-                            },
-                            icon: const Icon(Icons.history),
-                            label: const Text('History'),
-                          ),
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const CreateSessionPage()),
+                          );
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('New Session'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const HistoryPage()),
+                          );
+                        },
+                        icon: const Icon(Icons.history),
+                        label: const Text('History'),
+                      ),
                         ),
                       ],
                     ),

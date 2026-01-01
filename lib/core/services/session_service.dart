@@ -39,7 +39,7 @@ class SessionService {
 
     final currentTotal = (data['totalAmount'] ?? 0).toDouble();
     final newTotal = currentTotal + (service['price'] as num).toDouble();
-    
+
     // Recalculate final amount if discount exists
     final discount = (data['discount'] ?? 0).toDouble();
     final finalAmount = (newTotal - discount).clamp(0.0, double.infinity);
@@ -190,7 +190,7 @@ class SessionService {
     double amount,
   ) async {
     try {
-      await FirebaseFirestore.instance.runTransaction((tx) async {
+    await FirebaseFirestore.instance.runTransaction((tx) async {
         // STEP 1: DO ALL READS FIRST (Firestore requirement)
         final dayRef = FirebaseFirestore.instance.collection('days').doc(dateId);
         final financeRef = FirebaseFirestore.instance.collection('daily_finance').doc(dateId);
@@ -199,7 +199,7 @@ class SessionService {
         final financeDoc = await tx.get(financeRef);
 
         // STEP 2: NOW DO ALL WRITES
-        // Delete the session
+      // Delete the session
         final sessionRef = FirebaseFirestore.instance
             .collection('days')
             .doc(dateId)
@@ -209,16 +209,16 @@ class SessionService {
         tx.delete(sessionRef);
 
         // Update day totals if day exists
-        if (dayDoc.exists) {
-          final dayData = dayDoc.data() as Map<String, dynamic>;
-          final currentTotal = (dayData['totalAmount'] ?? 0).toDouble();
-          final currentUsers = (dayData['totalUsers'] ?? 0);
+      if (dayDoc.exists) {
+        final dayData = dayDoc.data() as Map<String, dynamic>;
+        final currentTotal = (dayData['totalAmount'] ?? 0).toDouble();
+        final currentUsers = (dayData['totalUsers'] ?? 0);
 
-          tx.update(dayRef, {
-            'totalAmount': (currentTotal - amount).clamp(0.0, double.infinity),
-            'totalUsers': (currentUsers - 1).clamp(0, double.infinity),
-          });
-        }
+        tx.update(dayRef, {
+          'totalAmount': (currentTotal - amount).clamp(0.0, double.infinity),
+          'totalUsers': (currentUsers - 1).clamp(0, double.infinity),
+        });
+      }
 
         // Update daily finance if it exists
         if (financeDoc.exists) {

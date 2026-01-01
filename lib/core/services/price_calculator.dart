@@ -67,7 +67,21 @@ class PriceCalculator {
     _cacheTime = null;
   }
 
-  // Calculate price based on hours and minutes for PS4
+  /// Calculate price for PS4 gaming session
+  /// 
+  /// Pricing Rules:
+  /// 1. Base hourly rate = PS4 rate + (Additional Controllers × Controller Price)
+  /// 2. Full hours = Hours × Base Hourly Rate
+  /// 3. Additional minutes = (Base Hourly Rate ÷ 2) × (Minutes ÷ 30)
+  /// 4. Total = Full Hours Price + Additional Minutes Price
+  /// 
+  /// Example:
+  /// - PS4 base: 250 LKR/hour
+  /// - 1 controller: 150 LKR/hour
+  /// - Base hourly rate: 250 + 150 = 400 LKR/hour
+  /// - 1 hour: 400 LKR
+  /// - 30 minutes extension: (400 ÷ 2) × (30 ÷ 60) = 100 LKR
+  /// - Total: 400 + 100 = 500 LKR
   static Future<double> ps4Price({
     required int hours,
     required int minutes,
@@ -80,18 +94,38 @@ class PriceCalculator {
         (prices['additionalController'] ?? _defaultAdditionalController)
             .toDouble();
 
-    double totalHours = hours + (minutes / 60.0);
-    // Round up to nearest 15 minutes
-    totalHours = (totalHours * 4).ceil() / 4.0;
-    double basePrice = totalHours * ps4HourlyRate;
-    // Add additional controller charges
-    if (additionalControllers > 0) {
-      basePrice += (additionalControllers * additionalControllerRate);
+    // Step 1: Calculate base hourly rate (device + controllers)
+    double baseHourlyRate = ps4HourlyRate + (additionalControllers * additionalControllerRate);
+    
+    // Step 2: Calculate full hours price
+    double fullHoursPrice = (hours * baseHourlyRate).toDouble();
+    
+    // Step 3: Calculate additional minutes at 50% of hourly rate
+    // 30 minutes = 50% of hourly rate, so formula: (hourly rate / 2) × (minutes / 30)
+    double additionalMinutesPrice = 0.0;
+    if (minutes > 0) {
+      additionalMinutesPrice = (baseHourlyRate / 2) * (minutes / 30.0);
     }
-    return basePrice;
+    
+    // Step 4: Return total
+    return fullHoursPrice + additionalMinutesPrice;
   }
 
-  // Calculate price based on hours and minutes for PS5
+  /// Calculate price for PS5 gaming session
+  /// 
+  /// Pricing Rules:
+  /// 1. Base hourly rate = PS5 rate + (Additional Controllers × Controller Price)
+  /// 2. Full hours = Hours × Base Hourly Rate
+  /// 3. Additional minutes = (Base Hourly Rate ÷ 2) × (Minutes ÷ 30)
+  /// 4. Total = Full Hours Price + Additional Minutes Price
+  /// 
+  /// Example:
+  /// - PS5 base: 350 LKR/hour
+  /// - 1 controller: 150 LKR/hour
+  /// - Base hourly rate: 350 + 150 = 500 LKR/hour
+  /// - 1 hour: 500 LKR
+  /// - 30 minutes extension: (500 ÷ 2) × (30 ÷ 60) = 250 LKR
+  /// - Total: 500 + 250 = 750 LKR
   static Future<double> ps5Price({
     required int hours,
     required int minutes,
@@ -104,15 +138,21 @@ class PriceCalculator {
         (prices['additionalController'] ?? _defaultAdditionalController)
             .toDouble();
 
-    double totalHours = hours + (minutes / 60.0);
-    // Round up to nearest 15 minutes
-    totalHours = (totalHours * 4).ceil() / 4.0;
-    double basePrice = totalHours * ps5HourlyRate;
-    // Add additional controller charges
-    if (additionalControllers > 0) {
-      basePrice += (additionalControllers * additionalControllerRate);
+    // Step 1: Calculate base hourly rate (device + controllers)
+    double baseHourlyRate = ps5HourlyRate + (additionalControllers * additionalControllerRate);
+    
+    // Step 2: Calculate full hours price
+    double fullHoursPrice = (hours * baseHourlyRate).toDouble();
+    
+    // Step 3: Calculate additional minutes at 50% of hourly rate
+    // 30 minutes = 50% of hourly rate, so formula: (hourly rate / 2) × (minutes / 30)
+    double additionalMinutesPrice = 0.0;
+    if (minutes > 0) {
+      additionalMinutesPrice = (baseHourlyRate / 2) * (minutes / 30.0);
     }
-    return basePrice;
+    
+    // Step 4: Return total
+    return fullHoursPrice + additionalMinutesPrice;
   }
 
   static Future<double> carSimulator() async {
