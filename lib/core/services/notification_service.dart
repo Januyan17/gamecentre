@@ -20,45 +20,81 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
     // Extract serviceId from params (we need to pass it when scheduling)
     final serviceId = params['serviceId'] as String?;
     final sessionId = params['sessionId'] as String?;
-    
+
     if (serviceId == null || sessionId == null) {
-      // If we don't have session info, don't show notification
+      debugPrint('⚠️ Notification callback: Missing serviceId or sessionId');
       return;
     }
-    
-    // Check if session is still active in Firestore
+
+    debugPrint('🔔 Alarm fired for service: $serviceId, session: $sessionId');
+
+    // Initialize Firestore in background isolate
     final firestore = FirebaseFirestore.instance;
-    final sessionDoc = await firestore.collection('active_sessions').doc(sessionId).get();
-    
+
+    // Check if session is still active in Firestore with timeout
+    DocumentSnapshot? sessionDoc;
+    bool checkFailed = false;
+
+    try {
+      sessionDoc = await firestore
+          .collection('active_sessions')
+          .doc(sessionId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('⚠️ Firestore query failed: $e. Will show notification anyway.');
+      checkFailed = true;
+    }
+
+    // If Firestore check failed (network/initialization error), show notification anyway
+    if (checkFailed || sessionDoc == null) {
+      final title = params['title'] as String? ?? 'Time Up';
+      final body = params['body'] as String? ?? 'Service time completed';
+      debugPrint('⚠️ Firestore check failed, showing notification anyway: $title - $body');
+      await _showNotificationFromCallback(id, title, body);
+      return;
+    }
+
     // Only show notification if session is still active
     if (!sessionDoc.exists) {
-      // Session has been closed/ended, don't show notification
+      debugPrint('ℹ️ Session $sessionId is no longer active. Not showing notification.');
       return;
     }
-    
-    final sessionData = sessionDoc.data();
+
+    final sessionData = sessionDoc.data() as Map<String, dynamic>?;
     if (sessionData == null) {
+      debugPrint('ℹ️ Session $sessionId has no data. Not showing notification.');
       return;
     }
-    
+
     // Check if the service still exists in the session
     final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
-    final serviceExists = services.any((service) => 
-      (service['id'] as String? ?? '') == serviceId
-    );
-    
+    final serviceExists = services.any((service) => (service['id'] as String? ?? '') == serviceId);
+
     if (!serviceExists) {
-      // Service has been removed, don't show notification
+      debugPrint(
+        'ℹ️ Service $serviceId no longer exists in session $sessionId. Not showing notification.',
+      );
       return;
     }
-    
+
     // Session is still active and service exists, show notification
     final title = params['title'] as String? ?? 'Time Up';
     final body = params['body'] as String? ?? 'Service time completed';
+    debugPrint('✅ Showing notification: $title - $body');
     await _showNotificationFromCallback(id, title, body);
-  } catch (e) {
-    debugPrint('Error checking session status: $e');
-    // On error, don't show notification to be safe
+  } catch (e, stackTrace) {
+    debugPrint('❌ Error checking session status: $e');
+    debugPrint('Stack trace: $stackTrace');
+    // On error, show notification anyway to ensure user is notified
+    try {
+      final title = params['title'] as String? ?? 'Time Up';
+      final body = params['body'] as String? ?? 'Service time completed';
+      debugPrint('⚠️ Showing notification despite error to ensure user is notified');
+      await _showNotificationFromCallback(id, title, body);
+    } catch (e2) {
+      debugPrint('❌ Failed to show notification even after error: $e2');
+    }
   }
 }
 
@@ -66,7 +102,7 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
 @pragma('vm:entry-point')
 Future<void> _showNotificationFromCallback(int id, String title, String body) async {
   final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
-  
+
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'service_time_up',
     'Service Time Up',
@@ -79,17 +115,10 @@ Future<void> _showNotificationFromCallback(int id, String title, String body) as
     visibility: NotificationVisibility.public,
   );
 
-  const NotificationDetails notificationDetails = NotificationDetails(
-    android: androidDetails,
-  );
+  const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
 
   try {
-    await notifications.show(
-      id,
-      title,
-      body,
-      notificationDetails,
-    );
+    await notifications.show(id, title, body, notificationDetails);
   } catch (e) {
     debugPrint('Error showing notification: $e');
   }
@@ -117,7 +146,9 @@ class NotificationService {
     await AndroidAlarmManager.initialize();
 
     // Android initialization settings
-    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
@@ -137,18 +168,19 @@ class NotificationService {
 
     // Request permissions for Android 13+
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidImplementation = _notifications
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      
+      final androidImplementation =
+          _notifications
+              .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
       if (androidImplementation != null) {
         await androidImplementation.requestNotificationsPermission();
-        
+
         try {
           await androidImplementation.requestExactAlarmsPermission();
         } catch (e) {
           debugPrint('Could not request exact alarm permission: $e');
         }
-        
+
         try {
           await androidImplementation.createNotificationChannel(
             const AndroidNotificationChannel(
@@ -168,7 +200,7 @@ class NotificationService {
     }
 
     _initialized = true;
-    
+
     // Request battery optimization exemption
     await requestBatteryOptimizationExemption();
   }
@@ -183,7 +215,7 @@ class NotificationService {
       }
     }
   }
-  
+
   /// Open auto-start settings
   Future<void> openAutoStartSettings() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -261,10 +293,7 @@ class NotificationService {
   }
 
   /// Show an immediate notification (for testing)
-  Future<void> showImmediateNotification({
-    required String title,
-    required String body,
-  }) async {
+  Future<void> showImmediateNotification({required String title, required String body}) async {
     if (!_initialized) {
       await initialize();
     }
@@ -279,9 +308,7 @@ class NotificationService {
       enableVibration: true,
     );
 
-    const NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
-    );
+    const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
 
     try {
       await _notifications.show(
