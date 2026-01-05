@@ -70,64 +70,70 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Check if any active services have completed and show notifications
   Future<void> _checkServiceTimes() async {
     try {
-      final provider = context.read<SessionProvider>();
-      if (provider.activeSessionId == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      
+      // Check all active sessions, not just the provider's activeSessionId
+      final fs = FirebaseService();
+      final activeSessionsSnapshot = await fs.activeSessionsRef().get();
+      
+      if (activeSessionsSnapshot.docs.isEmpty) return;
 
-      final sessionDoc = await provider.sessionsRef().doc(provider.activeSessionId!).get();
-      if (!sessionDoc.exists) return;
-
-      final sessionData = sessionDoc.data() as Map<String, dynamic>?;
-      if (sessionData == null) return;
-
-      final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
-      final customerName = sessionData['customerName'] as String? ?? 'Customer';
       final now = DateTime.now();
 
-      for (var service in services) {
-        final serviceType = service['type'] as String? ?? '';
-        if (serviceType == 'VR') continue;
+      for (var sessionDoc in activeSessionsSnapshot.docs) {
+        final sessionId = sessionDoc.id;
+        final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+        if (sessionData == null) continue;
 
-        final startTimeStr = service['startTime'] as String?;
-        if (startTimeStr == null) continue;
+        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+        final customerName = sessionData['customerName'] as String? ?? 'Customer';
 
-        DateTime? endTime;
-        if (serviceType == 'PS4' || serviceType == 'PS5') {
-          final startTime = DateTime.parse(startTimeStr);
-          final hours = (service['hours'] as num?)?.toInt() ?? 0;
-          final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-          endTime = startTime.add(Duration(hours: hours, minutes: minutes));
-        } else if (serviceType == 'Theatre') {
-          final startTime = DateTime.parse(startTimeStr);
-          final hours = (service['hours'] as num?)?.toInt() ?? 1;
-          endTime = startTime.add(Duration(hours: hours));
-        } else if (serviceType == 'Simulator') {
-          final startTime = DateTime.parse(startTimeStr);
-          final duration = (service['duration'] as num?)?.toInt() ?? 30;
-          endTime = startTime.add(Duration(minutes: duration));
-        }
+        for (var service in services) {
+          final serviceType = service['type'] as String? ?? '';
+          if (serviceType == 'VR') continue;
 
-        // Check if time is up (within last 30 seconds to avoid duplicate notifications)
-        if (endTime != null) {
-          final timeDiff = now.difference(endTime);
-          if (timeDiff.inSeconds >= 0 && timeDiff.inSeconds <= 30) {
-            // Time is up! Show notification immediately
-            final serviceId = service['id'] as String? ?? '';
-            final notificationKey = 'time_up_${serviceId}';
+          final startTimeStr = service['startTime'] as String?;
+          if (startTimeStr == null) continue;
 
-            // Check if we've already notified for this service
-            final prefs = await SharedPreferences.getInstance();
-            final alreadyNotified = prefs.getBool(notificationKey) ?? false;
-            if (!alreadyNotified) {
-              // Show immediate notification
-              await NotificationService().showImmediateNotification(
-                title: 'Time Up: $serviceType',
-                body: '$serviceType session for $customerName has completed',
-              );
+          DateTime? endTime;
+          if (serviceType == 'PS4' || serviceType == 'PS5') {
+            final startTime = DateTime.parse(startTimeStr);
+            final hours = (service['hours'] as num?)?.toInt() ?? 0;
+            final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+            endTime = startTime.add(Duration(hours: hours, minutes: minutes));
+          } else if (serviceType == 'Theatre') {
+            final startTime = DateTime.parse(startTimeStr);
+            final hours = (service['hours'] as num?)?.toInt() ?? 1;
+            endTime = startTime.add(Duration(hours: hours));
+          } else if (serviceType == 'Simulator') {
+            final startTime = DateTime.parse(startTimeStr);
+            final duration = (service['duration'] as num?)?.toInt() ?? 30;
+            endTime = startTime.add(Duration(minutes: duration));
+          }
 
-              // Mark as notified
-              await prefs.setBool(notificationKey, true);
+          // Check if time is up (within last 30 seconds to avoid duplicate notifications)
+          if (endTime != null) {
+            final timeDiff = now.difference(endTime);
+            if (timeDiff.inSeconds >= 0 && timeDiff.inSeconds <= 30) {
+              // Time is up! Check if we've already notified for this service
+              final serviceId = service['id'] as String? ?? '';
+              // Include sessionId in key to make it unique per session
+              final notificationKey = 'time_up_${sessionId}_${serviceId}';
 
-              debugPrint('🔔 Time-up notification shown for $serviceType');
+              // Check if we've already notified for this service (atomic check)
+              final alreadyNotified = prefs.getBool(notificationKey) ?? false;
+              if (!alreadyNotified) {
+                // Mark as notified FIRST to prevent race conditions
+                await prefs.setBool(notificationKey, true);
+                
+                // Then show notification
+                await NotificationService().showImmediateNotification(
+                  title: 'Time Up: $serviceType',
+                  body: '$serviceType session for $customerName has completed',
+                );
+
+                debugPrint('🔔 Time-up notification shown for $serviceType (Session: $sessionId)');
+              }
             }
           }
         }
@@ -393,8 +399,14 @@ class _DashboardPageState extends State<DashboardPage> {
                         final data = doc.data() as Map<String, dynamic>;
                         final customerName = data['customerName'] ?? 'Unknown';
                         final totalAmount = (data['totalAmount'] ?? 0).toDouble();
-                        final discount = (data['discount'] ?? 0).toDouble();
-                        final finalAmount = (data['finalAmount'] ?? totalAmount).toDouble();
+                        // Properly handle null/undefined discount (when removed, field is deleted)
+                        final discountValue = data['discount'];
+                        final discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
+                        // finalAmount might be deleted when discount is removed, so default to totalAmount
+                        final finalAmountValue = data['finalAmount'];
+                        final finalAmount = finalAmountValue != null 
+                            ? (finalAmountValue as num).toDouble() 
+                            : totalAmount;
 
                         // Properly convert services from Firestore
                         final servicesList = data['services'];

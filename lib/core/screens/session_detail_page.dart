@@ -352,8 +352,14 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                 if (snapshot.hasData && snapshot.data!.exists) {
                   final data = snapshot.data!.data() as Map<String, dynamic>?;
                   total = (data?['totalAmount'] ?? 0).toDouble();
-                  discount = (data?['discount'] ?? 0).toDouble();
-                  finalAmount = (data?['finalAmount'] ?? total);
+                  // Properly handle null/undefined discount (when removed, field is deleted)
+                  final discountValue = data?['discount'];
+                  discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
+                  // finalAmount might be deleted when discount is removed, so default to total
+                  final finalAmountValue = data?['finalAmount'];
+                  finalAmount = finalAmountValue != null 
+                      ? (finalAmountValue as num).toDouble() 
+                      : total;
                 }
 
                 return Column(
@@ -682,10 +688,15 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                 final sessionDoc = await provider.sessionsRef().doc(provider.activeSessionId).get();
                 if (sessionDoc.exists) {
                   final data = sessionDoc.data() as Map<String, dynamic>?;
-                  finalAmount =
-                      (data?['finalAmount'] ?? data?['totalAmount'] ?? provider.currentTotal)
-                          .toDouble();
-                  discount = (data?['discount'] ?? 0).toDouble();
+                  final totalAmount = (data?['totalAmount'] ?? provider.currentTotal).toDouble();
+                  // Properly handle null/undefined discount (when removed, field is deleted)
+                  final discountValue = data?['discount'];
+                  discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
+                  // finalAmount might be deleted when discount is removed, so default to totalAmount
+                  final finalAmountValue = data?['finalAmount'];
+                  finalAmount = finalAmountValue != null 
+                      ? (finalAmountValue as num).toDouble() 
+                      : totalAmount;
                 }
 
                 final confirm = await showDialog<bool>(
