@@ -9,13 +9,39 @@ class FinanceTab extends StatefulWidget {
   State<FinanceTab> createState() => FinanceTabState();
 }
 
-class FinanceTabState extends State<FinanceTab> with AutomaticKeepAliveClientMixin {
+class FinanceTabState extends State<FinanceTab> with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   @override
   bool get wantKeepAlive => true;
+  
+  late TabController _tabController;
+  final GlobalKey<DailyFinancePageState> _dailyFinanceKey = GlobalKey<DailyFinancePageState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    // Refresh daily finance page when tab 0 (Daily Finance) is selected
+    if (_tabController.index == 0 && _dailyFinanceKey.currentState != null) {
+      _dailyFinanceKey.currentState!.refreshData();
+    }
+  }
 
   void refreshData() {
-    // This will be called when the tab is selected
-    // The DailyFinancePage will refresh in its didChangeDependencies
+    // This will be called when the tab is selected from navigation
+    if (_dailyFinanceKey.currentState != null) {
+      _dailyFinanceKey.currentState!.refreshData();
+    }
     setState(() {});
   }
 
@@ -23,14 +49,13 @@ class FinanceTabState extends State<FinanceTab> with AutomaticKeepAliveClientMix
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
+    return Scaffold(
         appBar: AppBar(
           title: const Text('Finance'),
           backgroundColor: Colors.purple.shade700,
           foregroundColor: Colors.white,
           bottom: TabBar(
+            controller: _tabController,
             indicatorColor: Colors.white,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
@@ -46,14 +71,14 @@ class FinanceTabState extends State<FinanceTab> with AutomaticKeepAliveClientMix
             ],
           ),
         ),
-        body: const TabBarView(
+        body: TabBarView(
+          controller: _tabController,
           children: [
-            DailyFinancePage(),
-            FinanceHistoryPage(),
+            DailyFinancePage(key: _dailyFinanceKey),
+            const FinanceHistoryPage(),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 

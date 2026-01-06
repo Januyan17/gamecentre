@@ -515,15 +515,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       });
                     }
 
+                  // Form key for validation
+                  final formKey = GlobalKey<FormState>();
+
                   return Dialog(
                     insetPadding: const EdgeInsets.all(16),
                     child: SingleChildScrollView(
                       child: Padding(
                         padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                        child: Form(
+                          key: formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             Text(
                               'Book $serviceType',
                               style: TextStyle(
@@ -658,24 +663,51 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           ),
                           const SizedBox(height: 20),
                           // Customer Name
-                          TextField(
+                          TextFormField(
                             controller: _nameController,
                             decoration: const InputDecoration(
                               labelText: 'Customer Name *',
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.person),
+                              helperText: 'Enter customer full name',
                             ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Customer name is required';
+                              }
+                              if (value.trim().length < 2) {
+                                return 'Name must be at least 2 characters';
+                              }
+                              return null;
+                            },
+                            textCapitalization: TextCapitalization.words,
                           ),
                           const SizedBox(height: 16),
                           // Phone Number
-                          TextField(
+                          TextFormField(
                             controller: _phoneController,
                             decoration: const InputDecoration(
                               labelText: 'Phone Number *',
                               border: OutlineInputBorder(),
                               prefixIcon: Icon(Icons.phone),
+                              helperText: 'Enter 10-digit phone number',
                             ),
                             keyboardType: TextInputType.phone,
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Phone number is required';
+                              }
+                              // Remove spaces, dashes, and parentheses for validation
+                              final phoneDigits = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                              if (phoneDigits.length < 10) {
+                                return 'Phone number must be at least 10 digits';
+                              }
+                              if (!RegExp(r'^[0-9]+$').hasMatch(phoneDigits)) {
+                                return 'Phone number must contain only digits';
+                              }
+                              return null;
+                            },
+                            maxLength: 15,
                           ),
                           const SizedBox(height: 16),
                           // Service-specific fields
@@ -875,9 +907,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               const SizedBox(width: 8),
                               ElevatedButton(
                                 onPressed: () {
-                                  // Update global selected date before creating booking
-                                  _selectedDate = dialogSelectedDate;
-                                  _createBooking(context);
+                                  // Validate form before creating booking
+                                  if (formKey.currentState!.validate()) {
+                                    // Update global selected date before creating booking
+                                    _selectedDate = dialogSelectedDate;
+                                    _createBooking(context);
+                                  }
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.purple.shade700,
@@ -891,7 +926,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       ),
                     ),
                   ),
-                );
+                ),
+              );
                 },
             ),
     );

@@ -6,10 +6,11 @@ class DailyFinancePage extends StatefulWidget {
   const DailyFinancePage({super.key});
 
   @override
-  State<DailyFinancePage> createState() => _DailyFinancePageState();
+  State<DailyFinancePage> createState() => DailyFinancePageState();
 }
 
-class _DailyFinancePageState extends State<DailyFinancePage> {
+// Make state class public so it can be accessed from parent
+class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingObserver {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _expenseController = TextEditingController();
   final TextEditingController _expenseNoteController = TextEditingController();
@@ -25,29 +26,48 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
   bool _autoPreserved = false;
   Timestamp? _savedAt;
   Timestamp? _updatedAt;
+  bool _hasInitialLoad = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadDailyData();
+    _hasInitialLoad = true;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _expenseController.dispose();
+    _expenseNoteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      // Refresh data when app comes back to foreground
+      _loadDailyData();
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh data when page becomes visible
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _loadDailyData();
-      }
-    });
+    // Refresh data when page becomes visible (especially when tab is switched to)
+    if (_hasInitialLoad) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadDailyData();
+        }
+      });
+    }
   }
 
-  @override
-  void dispose() {
-    _expenseController.dispose();
-    _expenseNoteController.dispose();
-    super.dispose();
+  // Public method to refresh data (can be called from parent)
+  void refreshData() {
+    _loadDailyData();
   }
 
   Future<void> _loadDailyData() async {
