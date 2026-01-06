@@ -801,6 +801,48 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     }
   }
 
+  Future<void> _deleteBooking(String bookingId) async {
+    // Show confirmation dialog
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Booking'),
+        content: const Text('Are you sure you want to delete this booking? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _firestore.collection('bookings').doc(bookingId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking deleted successfully. Time slot is now available.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting booking: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
@@ -1088,7 +1130,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       ),
                                       decoration: BoxDecoration(
                                         color:
-                                            status == 'confirmed'
+                                            status == 'confirmed' || status == 'done'
                                                 ? Colors.green.shade100
                                                 : status == 'cancelled'
                                                 ? Colors.red.shade100
@@ -1101,7 +1143,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold,
                                           color:
-                                              status == 'confirmed'
+                                              status == 'confirmed' || status == 'done'
                                                   ? Colors.green.shade700
                                                   : status == 'cancelled'
                                                   ? Colors.red.shade700
@@ -1163,6 +1205,15 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   onPressed: () => _markAsDone(doc.id),
                                   tooltip: 'Mark as Done',
                                 ),
+                              const SizedBox(height: 4),
+                              IconButton(
+                                icon: const Icon(Icons.delete, size: 20),
+                                color: Colors.red.shade700,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () => _deleteBooking(doc.id),
+                                tooltip: 'Delete Booking',
+                              ),
                             ],
                           ),
                         ],

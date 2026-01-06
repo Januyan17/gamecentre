@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../providers/session_provider.dart';
 import 'session_detail_page.dart';
 
@@ -15,6 +17,9 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   final List<TextEditingController> _customerControllers = [TextEditingController()];
   final List<TextEditingController> _mobileControllers = [TextEditingController()];
   bool _isCreating = false;
+  String? _selectedServiceType;
+  
+  final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
 
   @override
   void dispose() {
@@ -45,6 +50,79 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     }
   }
 
+  Future<void> _checkBookingConflict() async {
+    if (_selectedServiceType == null || _selectedServiceType!.isEmpty) {
+      return; // No service type selected, skip check
+    }
+
+    try {
+      final now = DateTime.now();
+      final dateId = DateFormat('yyyy-MM-dd').format(now);
+      final currentHour = now.hour;
+      final currentTimeSlot = '${currentHour.toString().padLeft(2, '0')}:00';
+
+      // IMPORTANT: Only check bookings for the SAME service type
+      // Different service types (e.g., PS5 vs Theatre) don't conflict
+      final selectedServiceType = _selectedServiceType!.trim();
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('date', isEqualTo: dateId)
+          .where('serviceType', isEqualTo: selectedServiceType)
+          .get();
+
+      // Check if current time slot is booked
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final bookedServiceType = (data['serviceType'] as String? ?? '').trim();
+        
+        // Double-check: Only process bookings for the same service type
+        // This is a safeguard in case the query doesn't filter correctly
+        if (bookedServiceType.toLowerCase() != selectedServiceType.toLowerCase()) {
+          continue; // Skip bookings for different service types
+        }
+        
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        
+        // Only check conflicts with 'pending', 'confirmed', and 'done' bookings
+        // 'cancelled' bookings don't block
+        if (status == 'cancelled') continue;
+
+        final bookedTimeSlot = data['timeSlot'] as String? ?? '';
+        if (bookedTimeSlot.isEmpty) continue;
+
+        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        
+        // Parse booked time slot (e.g., "14:00")
+        final bookedParts = bookedTimeSlot.split(':');
+        if (bookedParts.length != 2) continue;
+        
+        final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
+        final bookedStartDecimal = bookedHour.toDouble();
+        final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+
+        // Check if current time falls within booked time range
+        final currentDecimal = currentHour.toDouble();
+        if (currentDecimal >= bookedStartDecimal && currentDecimal < bookedEndDecimal) {
+          // Format booked end time
+          final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
+          final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
+          final bookedEndTime = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          
+          throw Exception(
+            'Cannot create session: This time slot is already booked for $selectedServiceType.\n\n'
+            'Current time: $currentTimeSlot\n'
+            'Existing booking: $bookedServiceType at $bookedTimeSlot - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+            'Please wait until the booking ends or choose a different service type.\n'
+            'Note: Different service types (e.g., PS5 and Theatre) can be booked at the same time.'
+          );
+        }
+      }
+    } catch (e) {
+      // Re-throw to let the caller handle it
+      rethrow;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -54,6 +132,33 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text(
+              'Service Type:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _serviceTypes.map((type) {
+                final isSelected = _selectedServiceType == type;
+                return ChoiceChip(
+                  label: Text(type),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      _selectedServiceType = selected ? type : null;
+                    });
+                  },
+                  selectedColor: Colors.blue.shade300,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : Colors.black87,
+                    fontWeight: FontWeight.w600,
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
             const Text(
               'Customer Details (Add multiple if needed):',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -150,6 +255,25 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                             });
 
                             try {
+                              // Validate service type selection
+                              if (_selectedServiceType == null) {
+                                if (mounted) {
+                                  setState(() {
+                                    _isCreating = false;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please select a service type'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              // Check for booking conflicts at current time
+                              await _checkBookingConflict();
+
                               // Validate all fields
                               bool hasError = false;
                               String errorMessage = '';
@@ -239,10 +363,37 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                 setState(() {
                                   _isCreating = false;
                                 });
+                                
+                                // Extract error message
+                                String errorMessage = 'Error creating session';
+                                final errorStr = e.toString();
+                                
+                                if (errorStr.contains('already booked') || errorStr.contains('Cannot create session')) {
+                                  // Extract the detailed conflict message (handles multi-line)
+                                  final match = RegExp(r'Cannot create session: (.+)', dotAll: true).firstMatch(errorStr);
+                                  if (match != null) {
+                                    errorMessage = '⚠️ Booking Conflict\n\n${match.group(1)!.trim()}';
+                                  } else {
+                                    errorMessage = '⚠️ This time slot is already booked. Please wait or choose a different service type.';
+                                  }
+                                } else {
+                                  errorMessage = 'Error creating session:\n${errorStr.replaceAll('Exception: ', '').trim()}';
+                                }
+                                
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Error creating session: ${e.toString()}'),
+                                    content: Text(
+                                      errorMessage,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                     backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 5),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    action: SnackBarAction(
+                                      label: 'OK',
+                                      textColor: Colors.white,
+                                      onPressed: () {},
+                                    ),
                                   ),
                                 );
                               }
