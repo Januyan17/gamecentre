@@ -93,6 +93,55 @@ Future<void> _checkAndShowNotification(
       return;
     }
 
+    // Get service type from params to check specific notification setting
+    final serviceType = params['serviceType'] as String? ?? '';
+
+    // Check if notifications are enabled for this specific service type
+    bool notificationsEnabled = true;
+    try {
+      final notificationDoc = await firestore
+          .collection('settings')
+          .doc('notifications')
+          .get()
+          .timeout(const Duration(seconds: 3));
+      if (notificationDoc.exists) {
+        final data = notificationDoc.data();
+        // Map service type to setting key (case-insensitive)
+        final serviceTypeLower = serviceType.toLowerCase();
+        String settingKey;
+        if (serviceTypeLower == 'ps4') {
+          settingKey = 'ps4';
+        } else if (serviceTypeLower == 'ps5') {
+          settingKey = 'ps5';
+        } else if (serviceTypeLower == 'vr') {
+          settingKey = 'vr';
+        } else if (serviceTypeLower == 'simulator') {
+          settingKey = 'simulator';
+        } else if (serviceTypeLower == 'theatre') {
+          settingKey = 'theatre';
+        } else {
+          // Unknown service type, default to enabled
+          settingKey = '';
+        }
+
+        if (settingKey.isNotEmpty) {
+          notificationsEnabled = data?[settingKey] ?? true;
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ Could not check notification setting, defaulting to enabled: $e',
+      );
+      // Default to enabled if check fails
+    }
+
+    if (!notificationsEnabled) {
+      debugPrint(
+        'ℹ️ Notifications are disabled for $serviceType. Not showing notification.',
+      );
+      return;
+    }
+
     // Session is still active and service exists, show notification
     final title = params['title'] as String? ?? 'Time Up';
     final body = params['body'] as String? ?? 'Service time completed';
@@ -293,6 +342,7 @@ class NotificationService {
         params: {
           'serviceId': serviceId,
           'sessionId': sessionId,
+          'serviceType': serviceType,
           'title': 'Time Up: $serviceType',
           'body': '$serviceType session for $customerName has completed',
         },
@@ -322,7 +372,54 @@ class NotificationService {
   Future<void> showImmediateNotification({
     required String title,
     required String body,
+    String? serviceType,
   }) async {
+    // Check if notifications are enabled for this specific service type
+    if (serviceType != null) {
+      try {
+        final notificationDoc =
+            await FirebaseFirestore.instance
+                .collection('settings')
+                .doc('notifications')
+                .get();
+        if (notificationDoc.exists) {
+          final data = notificationDoc.data();
+          // Map service type to setting key (case-insensitive)
+          final serviceTypeLower = serviceType.toLowerCase();
+          String settingKey;
+          if (serviceTypeLower == 'ps4') {
+            settingKey = 'ps4';
+          } else if (serviceTypeLower == 'ps5') {
+            settingKey = 'ps5';
+          } else if (serviceTypeLower == 'vr') {
+            settingKey = 'vr';
+          } else if (serviceTypeLower == 'simulator') {
+            settingKey = 'simulator';
+          } else if (serviceTypeLower == 'theatre') {
+            settingKey = 'theatre';
+          } else {
+            // Unknown service type, default to enabled
+            settingKey = '';
+          }
+
+          if (settingKey.isNotEmpty) {
+            final notificationsEnabled = data?[settingKey] ?? true;
+            if (!notificationsEnabled) {
+              debugPrint(
+                'ℹ️ Notifications are disabled for $serviceType. Not showing notification.',
+              );
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint(
+          '⚠️ Could not check notification setting, defaulting to enabled: $e',
+        );
+        // Default to enabled if check fails
+      }
+    }
+
     if (!_initialized) {
       await initialize();
     }

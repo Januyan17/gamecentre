@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import 'package:rowzow/core/screens/history_page.dart';
 import 'package:rowzow/core/services/firebase_service.dart';
 import 'package:rowzow/core/services/daily_reset_service.dart';
 import 'package:rowzow/core/providers/session_provider.dart';
@@ -9,11 +8,27 @@ import 'create_session_page.dart';
 import 'session_detail_page.dart';
 import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
-import 'daily_finance_page.dart';
-import 'finance_history_page.dart';
 import '../services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'miui_setup_dialog.dart';
+
+// Helper method to get service color
+Color _getServiceColor(String type) {
+  switch (type) {
+    case 'PS5':
+      return Colors.blue;
+    case 'PS4':
+      return Colors.purple.shade700;
+    case 'VR':
+      return Colors.purple.shade500;
+    case 'Theatre':
+      return Colors.red.shade700;
+    case 'Simulator':
+      return Colors.orange.shade700;
+    default:
+      return Colors.grey;
+  }
+}
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -136,6 +151,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 await NotificationService().showImmediateNotification(
                   title: 'Time Up: $serviceType',
                   body: '$serviceType session for $customerName has completed',
+                  serviceType: serviceType,
                 );
 
                 debugPrint('🔔 Time-up notification shown for $serviceType (Session: $sessionId)');
@@ -309,7 +325,11 @@ class _DashboardPageState extends State<DashboardPage> {
     final fs = FirebaseService();
 
     return Scaffold(
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.purple.shade700,
+        foregroundColor: Colors.white,
         title: Row(
           children: [
             Image.asset(
@@ -319,7 +339,13 @@ class _DashboardPageState extends State<DashboardPage> {
               fit: BoxFit.contain,
             ),
             const SizedBox(width: 12),
-            const Text('RowZow Dashboard'),
+            const Text(
+              'RowZow',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -345,34 +371,113 @@ class _DashboardPageState extends State<DashboardPage> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Today Total: Rs $total',
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.purple.shade700,
+                      Colors.purple.shade500,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.purple.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
                     ),
-                    const SizedBox(height: 8),
-                    Text('Total Users: $users', style: const TextStyle(fontSize: 18)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Today Total',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.purple.shade100,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Rs ${total.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 50,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Total Users',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.purple.shade100,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$users',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
 
-              // Active Sessions List
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Active Sessions',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+              // Active Sessions Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.sports_esports,
+                        color: Colors.purple.shade700,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Active Sessions',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
                   stream: fs.activeSessionsRef().snapshots(),
@@ -386,11 +491,53 @@ class _DashboardPageState extends State<DashboardPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.sports_esports, size: 64, color: Colors.grey.shade400),
-                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.shade50,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.sports_esports,
+                                size: 64,
+                                color: Colors.purple.shade300,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
                             Text(
-                              'No active sessions',
-                              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+                              'No Active Sessions',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.purple.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Create a new session to get started',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const CreateSessionPage()),
+                                );
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Create Session'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple.shade700,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -441,23 +588,35 @@ class _DashboardPageState extends State<DashboardPage> {
                         }
 
                         return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           key: ValueKey('${doc.id}-${services.length}-${totalAmount}-${discount}-${finalAmount}'),
                           child: ExpansionTile(
                             initiallyExpanded: services.isNotEmpty,
+                            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            childrenPadding: const EdgeInsets.only(bottom: 8),
                             leading: CircleAvatar(
-                              backgroundColor: Colors.blue,
+                              backgroundColor: Colors.purple.shade700,
+                              radius: 24,
                               child: Text(
                                 customerName[0].toUpperCase(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
+                                  fontSize: 18,
                                 ),
                               ),
                             ),
                             title: Text(
                               customerName,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.purple.shade900,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -500,15 +659,22 @@ class _DashboardPageState extends State<DashboardPage> {
                                     ],
                                   ),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    'Final: Rs ${finalAmount.toStringAsFixed(2)}',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.green.shade700,
-                                      fontWeight: FontWeight.bold,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                    child: Text(
+                                      'Final: Rs ${finalAmount.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.green.shade700,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ] else
                                   Text(
@@ -519,15 +685,25 @@ class _DashboardPageState extends State<DashboardPage> {
                                 if (services.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      '${services.length} service${services.length != 1 ? 's' : ''}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.blue.shade700,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.list,
+                                          size: 14,
+                                          color: Colors.purple.shade700,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${services.length} service${services.length != 1 ? 's' : ''}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.purple.shade700,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 if (timeInfo.isNotEmpty)
@@ -542,32 +718,38 @@ class _DashboardPageState extends State<DashboardPage> {
                                   ),
                               ],
                             ),
-                            trailing: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 120),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (services.isNotEmpty)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green.shade100,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${services.length}',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.green.shade800,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (services.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.shade100,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '${services.length}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.purple.shade800,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  const SizedBox(width: 2),
-                                  IconButton(
-                                    icon: const Icon(Icons.open_in_new, size: 18),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                  ),
+                                if (services.isNotEmpty) const SizedBox(width: 4),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    icon: Icon(Icons.open_in_new, size: 16, color: Colors.purple.shade700),
+                                    padding: const EdgeInsets.all(6),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 32,
+                                      minHeight: 32,
+                                    ),
                                     onPressed: () async {
                                       // Load the session first
                                       await context.read<SessionProvider>().loadSession(doc.id);
@@ -583,10 +765,19 @@ class _DashboardPageState extends State<DashboardPage> {
                                     },
                                     tooltip: 'View Details',
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: IconButton(
+                                    icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                                    padding: const EdgeInsets.all(6),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 32,
+                                      minHeight: 32,
+                                    ),
                                     onPressed:
                                         () => _showDeleteConfirmation(
                                           context,
@@ -596,8 +787,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                         ),
                                     tooltip: 'Delete Session',
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                             children: [
                               if (services.isEmpty)
@@ -640,30 +831,52 @@ class _DashboardPageState extends State<DashboardPage> {
                                         '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
                                   }
 
-                                  return ListTile(
-                                    dense: true,
-                                    leading: Icon(
-                                      type == 'PS5'
-                                          ? Icons.sports_esports
-                                          : type == 'PS4'
-                                          ? Icons.videogame_asset
-                                          : Icons.category,
-                                      color:
+                                  return Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: ListTile(
+                                      dense: true,
+                                      leading: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: _getServiceColor(type).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
                                           type == 'PS5'
-                                              ? Colors.blue
+                                              ? Icons.sports_esports
                                               : type == 'PS4'
-                                              ? Colors.purple
-                                              : Colors.grey,
-                                    ),
-                                    title: Text(
-                                      '$type${multiplayer ? ' (Multiplayer)' : ''}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    subtitle: Text(
-                                      subtitle,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                              ? Icons.videogame_asset
+                                              : type == 'VR'
+                                              ? Icons.view_in_ar
+                                              : type == 'Theatre'
+                                              ? Icons.movie
+                                              : Icons.category,
+                                          color: _getServiceColor(type),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        '$type${multiplayer ? ' (Multiplayer)' : ''}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: Text(
+                                        subtitle,
+                                        style: TextStyle(
+                                          color: Colors.grey.shade700,
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   );
                                 }).toList(),
@@ -676,79 +889,36 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
 
-              // Action Buttons
+              // Floating Action Button for New Session
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const CreateSessionPage()),
-                          );
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('New Session'),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CreateSessionPage()),
+                      );
+                    },
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text(
+                      'New Session',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const HistoryPage()),
-                          );
-                        },
-                        icon: const Icon(Icons.history),
-                        label: const Text('History'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                        ),
-                      ],
+                      elevation: 4,
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const DailyFinancePage()),
-                              );
-                            },
-                            icon: const Icon(Icons.account_balance_wallet),
-                            label: const Text('Daily Finance'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const FinanceHistoryPage()),
-                              );
-                            },
-                            icon: const Icon(Icons.timeline),
-                            label: const Text('Finance History'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],
@@ -758,3 +928,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 }
+
+
+

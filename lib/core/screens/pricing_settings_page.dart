@@ -49,6 +49,11 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
 
   bool _isLoading = false;
   bool _isSaving = false;
+  bool _ps4NotificationsEnabled = true;
+  bool _ps5NotificationsEnabled = true;
+  bool _vrNotificationsEnabled = true;
+  bool _simulatorNotificationsEnabled = true;
+  bool _theatreNotificationsEnabled = true;
 
   @override
   void initState() {
@@ -77,9 +82,11 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
   Future<void> _loadPrices() async {
     setState(() => _isLoading = true);
     try {
-      final doc = await _firestore.collection('settings').doc('pricing').get();
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
+      // Load pricing
+      final pricingDoc =
+          await _firestore.collection('settings').doc('pricing').get();
+      if (pricingDoc.exists) {
+        final data = pricingDoc.data() as Map<String, dynamic>;
 
         _ps4HourlyController.text = (data['ps4HourlyRate'] ?? 250.0).toString();
         _ps5HourlyController.text = (data['ps5HourlyRate'] ?? 350.0).toString();
@@ -111,10 +118,24 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
         _person4hrController.text = '350';
         _additionalControllerController.text = '150';
       }
+
+      // Load notification settings
+      final notificationDoc =
+          await _firestore.collection('settings').doc('notifications').get();
+      if (notificationDoc.exists) {
+        final data = notificationDoc.data() as Map<String, dynamic>;
+        setState(() {
+          _ps4NotificationsEnabled = data['ps4'] ?? true;
+          _ps5NotificationsEnabled = data['ps5'] ?? true;
+          _vrNotificationsEnabled = data['vr'] ?? true;
+          _simulatorNotificationsEnabled = data['simulator'] ?? true;
+          _theatreNotificationsEnabled = data['theatre'] ?? true;
+        });
+      }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error loading prices: $e')));
+      ).showSnackBar(SnackBar(content: Text('Error loading settings: $e')));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -167,6 +188,80 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
     } finally {
       setState(() => _isSaving = false);
     }
+  }
+
+  Future<void> _saveNotificationSetting(
+    String serviceType,
+    bool enabled,
+  ) async {
+    try {
+      await _firestore.collection('settings').doc('notifications').set({
+        serviceType: enabled,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              enabled
+                  ? '$serviceType notifications enabled'
+                  : '$serviceType notifications disabled',
+            ),
+            backgroundColor: enabled ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving notification setting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildNotificationToggle(
+    String serviceName,
+    bool value,
+    Function(bool) onChanged,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                serviceName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          Switch(value: value, onChanged: onChanged, activeColor: color),
+        ],
+      ),
+    );
   }
 
   Widget _buildTextField({
@@ -245,6 +340,109 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Notification Settings
+                      Card(
+                        color: Colors.blue.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.notifications_active,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Notification Settings',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Enable notifications for each service type',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildNotificationToggle(
+                                'PS4',
+                                _ps4NotificationsEnabled,
+                                (value) async {
+                                  setState(() {
+                                    _ps4NotificationsEnabled = value;
+                                  });
+                                  await _saveNotificationSetting('ps4', value);
+                                },
+                                Colors.blue,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildNotificationToggle(
+                                'PS5',
+                                _ps5NotificationsEnabled,
+                                (value) async {
+                                  setState(() {
+                                    _ps5NotificationsEnabled = value;
+                                  });
+                                  await _saveNotificationSetting('ps5', value);
+                                },
+                                Colors.blue,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildNotificationToggle(
+                                'VR',
+                                _vrNotificationsEnabled,
+                                (value) async {
+                                  setState(() {
+                                    _vrNotificationsEnabled = value;
+                                  });
+                                  await _saveNotificationSetting('vr', value);
+                                },
+                                Colors.purple,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildNotificationToggle(
+                                'Simulator',
+                                _simulatorNotificationsEnabled,
+                                (value) async {
+                                  setState(() {
+                                    _simulatorNotificationsEnabled = value;
+                                  });
+                                  await _saveNotificationSetting(
+                                    'simulator',
+                                    value,
+                                  );
+                                },
+                                Colors.orange,
+                              ),
+                              const SizedBox(height: 12),
+                              _buildNotificationToggle(
+                                'Theatre',
+                                _theatreNotificationsEnabled,
+                                (value) async {
+                                  setState(() {
+                                    _theatreNotificationsEnabled = value;
+                                  });
+                                  await _saveNotificationSetting(
+                                    'theatre',
+                                    value,
+                                  );
+                                },
+                                Colors.red,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       // Console Prices
                       Card(
                         child: Padding(

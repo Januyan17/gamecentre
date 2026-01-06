@@ -33,6 +33,17 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when page becomes visible
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadDailyData();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _expenseController.dispose();
     _expenseNoteController.dispose();
@@ -295,14 +306,6 @@ class _DailyFinancePageState extends State<DailyFinancePage> {
           }
           return expenseMap;
         }).toList();
-
-        // Get existing savedAt to preserve it
-        final existingDoc = await _firestore.collection('daily_finance').doc(dateId).get();
-        final existingData = existingDoc.data();
-        dynamic savedAt = FieldValue.serverTimestamp();
-        if (existingData != null && existingData['savedAt'] != null) {
-          savedAt = existingData['savedAt'];
-        }
 
         // Update the database immediately
         await _firestore.collection('daily_finance').doc(dateId).update({

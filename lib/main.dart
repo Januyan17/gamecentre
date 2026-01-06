@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'core/providers/session_provider.dart';
-import 'core/screens/dashboard_page.dart';
+import 'core/screens/main_navigation.dart';
 import 'core/services/notification_service.dart';
 
 void main() async {
@@ -25,8 +25,20 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Gaming Center Staff',
-        theme: ThemeData(primarySwatch: Colors.deepPurple),
-        home: const DashboardPage(),
+        theme: ThemeData(
+          primarySwatch: Colors.deepPurple,
+          primaryColor: Colors.purple.shade700,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.purple.shade700,
+            primary: Colors.purple.shade700,
+          ),
+          appBarTheme: AppBarTheme(
+            backgroundColor: Colors.purple.shade700,
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+        ),
+        home: const MainNavigation(),
       ),
     );
   }
