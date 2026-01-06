@@ -14,12 +14,8 @@ class CreateSessionPage extends StatefulWidget {
 }
 
 class _CreateSessionPageState extends State<CreateSessionPage> {
-  final List<TextEditingController> _customerControllers = [
-    TextEditingController(),
-  ];
-  final List<TextEditingController> _mobileControllers = [
-    TextEditingController(),
-  ];
+  final List<TextEditingController> _customerControllers = [TextEditingController()];
+  final List<TextEditingController> _mobileControllers = [TextEditingController()];
   bool _isCreating = false;
   String? _selectedServiceType;
 
@@ -40,13 +36,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
     return time24Hour;
   }
 
-  final List<String> _serviceTypes = [
-    'PS5',
-    'PS4',
-    'VR',
-    'Simulator',
-    'Theatre',
-  ];
+  final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
 
   @override
   void dispose() {
@@ -126,13 +116,11 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
 
         // Double-check: Only process bookings for the same service type
         // This is a safeguard in case the query doesn't filter correctly
-        if (bookedServiceType.toLowerCase() !=
-            selectedServiceType.toLowerCase()) {
+        if (bookedServiceType.toLowerCase() != selectedServiceType.toLowerCase()) {
           continue; // Skip bookings for different service types
         }
 
-        final status =
-            (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
 
         // Only check conflicts with 'pending', 'confirmed', and 'done' bookings
         // 'cancelled' bookings don't block
@@ -141,8 +129,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
         final bookedTimeSlot = data['timeSlot'] as String? ?? '';
         if (bookedTimeSlot.isEmpty) continue;
 
-        final bookedDuration =
-            (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
 
         // Parse booked time slot (e.g., "14:00" or "14:30")
         final bookedParts = bookedTimeSlot.split(':');
@@ -160,17 +147,13 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
         final currentEndDecimal = currentStartDecimal + defaultDuration;
 
         // Check if our session time overlaps with booked time range
-        if ((currentStartDecimal >= bookedStartDecimal &&
-                currentStartDecimal < bookedEndDecimal) ||
-            (currentEndDecimal > bookedStartDecimal &&
-                currentEndDecimal <= bookedEndDecimal) ||
-            (currentStartDecimal <= bookedStartDecimal &&
-                currentEndDecimal >= bookedEndDecimal)) {
+        if ((currentStartDecimal >= bookedStartDecimal && currentStartDecimal < bookedEndDecimal) ||
+            (currentEndDecimal > bookedStartDecimal && currentEndDecimal <= bookedEndDecimal) ||
+            (currentStartDecimal <= bookedStartDecimal && currentEndDecimal >= bookedEndDecimal)) {
           // Format booked end time in 12-hour format
           final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
           final bookedEndMinute =
-              ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60)
-                  .round();
+              ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
           final bookedEndTime24Hour =
               '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
           final bookedEndTime12Hour = _formatTime12Hour(bookedEndTime24Hour);
@@ -181,9 +164,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
 
           // Calculate our end time
           final ourEndHour = (currentStartDecimal + defaultDuration).floor();
-          final ourEndMinute =
-              ((currentStartDecimal + defaultDuration - ourEndHour) * 60)
-                  .round();
+          final ourEndMinute = ((currentStartDecimal + defaultDuration - ourEndHour) * 60).round();
           final ourEndTime24Hour =
               '${ourEndHour.toString().padLeft(2, '0')}:${ourEndMinute.toString().padLeft(2, '0')}';
           final ourEndTime12Hour = _formatTime12Hour(ourEndTime24Hour);
@@ -198,21 +179,11 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
           if (showError && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  errorMessage,
-                  style: const TextStyle(fontSize: 14),
-                ),
+                content: Text(errorMessage, style: const TextStyle(fontSize: 14)),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                action: SnackBarAction(
-                  label: 'OK',
-                  textColor: Colors.white,
-                  onPressed: () {},
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                action: SnackBarAction(label: 'OK', textColor: Colors.white, onPressed: () {}),
               ),
             );
           }
@@ -307,11 +278,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                               const Spacer(),
                               if (_customerControllers.length > 1)
                                 IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
-                                    size: 20,
-                                  ),
+                                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
                                   onPressed: () => _removeCustomer(index),
                                   tooltip: 'Remove customer',
                                 ),
@@ -331,9 +298,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                             controller: _mobileControllers[index],
                             keyboardType: TextInputType.phone,
                             maxLength: 10,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                             decoration: InputDecoration(
                               labelText: 'Mobile Number',
                               border: const OutlineInputBorder(),
@@ -343,10 +308,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                               helperMaxLines: 1,
                               errorText:
                                   _mobileControllers[index].text.isNotEmpty &&
-                                          _mobileControllers[index]
-                                                  .text
-                                                  .length !=
-                                              10
+                                          _mobileControllers[index].text.length != 10
                                       ? 'Mobile number must be 10 digits'
                                       : null,
                             ),
@@ -390,9 +352,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text(
-                                        'Please select a service type',
-                                      ),
+                                      content: Text('Please select a service type'),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -407,27 +367,19 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                               bool hasError = false;
                               String errorMessage = '';
 
-                              for (
-                                int i = 0;
-                                i < _customerControllers.length;
-                                i++
-                              ) {
-                                final name =
-                                    _customerControllers[i].text.trim();
-                                final mobile =
-                                    _mobileControllers[i].text.trim();
+                              for (int i = 0; i < _customerControllers.length; i++) {
+                                final name = _customerControllers[i].text.trim();
+                                final mobile = _mobileControllers[i].text.trim();
 
                                 if (name.isEmpty && mobile.isNotEmpty) {
                                   hasError = true;
-                                  errorMessage =
-                                      'Please enter customer name for customer ${i + 1}';
+                                  errorMessage = 'Please enter customer name for customer ${i + 1}';
                                   break;
                                 }
 
                                 if (name.isNotEmpty && mobile.isEmpty) {
                                   hasError = true;
-                                  errorMessage =
-                                      'Please enter mobile number for customer ${i + 1}';
+                                  errorMessage = 'Please enter mobile number for customer ${i + 1}';
                                   break;
                                 }
 
@@ -456,21 +408,12 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
 
                               // Get valid customers (both name and mobile filled)
                               final validCustomers = <Map<String, String>>[];
-                              for (
-                                int i = 0;
-                                i < _customerControllers.length;
-                                i++
-                              ) {
-                                final name =
-                                    _customerControllers[i].text.trim();
-                                final mobile =
-                                    _mobileControllers[i].text.trim();
+                              for (int i = 0; i < _customerControllers.length; i++) {
+                                final name = _customerControllers[i].text.trim();
+                                final mobile = _mobileControllers[i].text.trim();
 
                                 if (name.isNotEmpty && mobile.isNotEmpty) {
-                                  validCustomers.add({
-                                    'name': name,
-                                    'mobile': mobile,
-                                  });
+                                  validCustomers.add({'name': name, 'mobile': mobile});
                                 }
                               }
 
@@ -496,16 +439,12 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                   .map((c) => '${c['name']} (${c['mobile']})')
                                   .join(', ');
 
-                              await context
-                                  .read<SessionProvider>()
-                                  .createSession(customerName);
+                              await context.read<SessionProvider>().createSession(customerName);
 
                               if (mounted) {
                                 Navigator.pushReplacement(
                                   context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const SessionDetailPage(),
-                                  ),
+                                  MaterialPageRoute(builder: (_) => const SessionDetailPage()),
                                 );
                               }
                             } catch (e) {
@@ -519,9 +458,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                 final errorStr = e.toString();
 
                                 if (errorStr.contains('already booked') ||
-                                    errorStr.contains(
-                                      'Cannot create session',
-                                    )) {
+                                    errorStr.contains('Cannot create session')) {
                                   // Extract the detailed conflict message (handles multi-line)
                                   final match = RegExp(
                                     r'Cannot create session: (.+)',
@@ -568,9 +505,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                             ),
                           )
                           : const Text('Start Session'),

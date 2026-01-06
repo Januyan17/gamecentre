@@ -76,5 +76,14 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Required for tel: URI support on Android 11+ -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.CALL"/>
+            <data android:scheme="tel"/>
+        </intent>
     </queries>
 </manifest>

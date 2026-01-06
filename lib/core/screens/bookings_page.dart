@@ -11,7 +11,8 @@ class BookingsPage extends StatefulWidget {
   State<BookingsPage> createState() => _BookingsPageState();
 }
 
-class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderStateMixin {
+class _BookingsPageState extends State<BookingsPage>
+    with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _selectedServiceType;
   DateTime _selectedDate = DateTime.now();
@@ -29,7 +30,13 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   int _durationMinutes = 30; // Duration in minutes for Simulator/VR
   late TabController _tabController;
 
-  final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
+  final List<String> _serviceTypes = [
+    'PS5',
+    'PS4',
+    'VR',
+    'Simulator',
+    'Theatre',
+  ];
 
   // Helper function to convert 24-hour time string to 12-hour format
   String _formatTime12Hour(String time24Hour) {
@@ -104,7 +111,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
     if (isPastDate) {
       // For past dates, check booking history
-      return _firestore.collection('booking_history').where('date', isEqualTo: dateId).snapshots();
+      return _firestore
+          .collection('booking_history')
+          .where('date', isEqualTo: dateId)
+          .snapshots();
     } else {
       // For today and future dates, check active bookings (exclude "done" status)
       return _firestore
@@ -150,9 +160,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error checking availability: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error checking availability: $e')),
+        );
       }
     }
   }
@@ -168,8 +178,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       for (var doc in bookingsList) {
         final data = doc.data() as Map<String, dynamic>;
         final timeSlot = data['timeSlot'] as String? ?? '';
-        final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        final durationHours =
+            (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final status =
+            (data['status'] as String? ?? 'pending').toLowerCase().trim();
 
         // Skip if no time slot
         if (timeSlot.isEmpty) continue;
@@ -215,7 +227,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
               Future<void> reloadAvailability(DateTime selectedDate) async {
                 try {
                   final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
-                  final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  final todayId = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(DateTime.now());
                   final isPastDate = dateId.compareTo(todayId) < 0;
 
                   // For past dates, check history; for today/future, check active bookings
@@ -237,7 +251,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   }
 
                   // Calculate new booked slots
-                  final newBookedSlots = calculateBookedSlots(bookingsSnapshot.docs);
+                  final newBookedSlots = calculateBookedSlots(
+                    bookingsSnapshot.docs,
+                  );
 
                   setDialogState(() {
                     dialogBookedSlots.clear();
@@ -246,9 +262,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   });
                 } catch (e) {
                   if (mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('Error loading availability: $e')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error loading availability: $e')),
+                    );
                   }
                 }
               }
@@ -270,7 +286,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         // Date Picker
                         Text(
                           'Select Date:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         InkWell(
@@ -284,12 +303,17 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               firstDate: now,
                               lastDate: maxDate,
                               selectableDayPredicate: (date) {
-                                return date.isAfter(now.subtract(const Duration(days: 1))) &&
-                                    date.isBefore(maxDate.add(const Duration(days: 1)));
+                                return date.isAfter(
+                                      now.subtract(const Duration(days: 1)),
+                                    ) &&
+                                    date.isBefore(
+                                      maxDate.add(const Duration(days: 1)),
+                                    );
                               },
                             );
 
-                            if (picked != null && picked != dialogSelectedDate) {
+                            if (picked != null &&
+                                picked != dialogSelectedDate) {
                               await reloadAvailability(picked);
                             }
                           },
@@ -302,17 +326,25 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.calendar_today, color: Colors.purple.shade700),
+                                Icon(
+                                  Icons.calendar_today,
+                                  color: Colors.purple.shade700,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
+                                  DateFormat(
+                                    'MMM dd, yyyy',
+                                  ).format(dialogSelectedDate),
                                   style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     color: Colors.purple.shade700,
                                   ),
                                 ),
                                 const Spacer(),
-                                Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  color: Colors.purple.shade700,
+                                ),
                               ],
                             ),
                           ),
@@ -332,14 +364,25 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           runSpacing: 6,
                           children:
                               _timeSlots.map((slot) {
-                                final isBooked = dialogBookedSlots.contains(slot);
+                                final isBooked = dialogBookedSlots.contains(
+                                  slot,
+                                );
                                 return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: isBooked ? Colors.red.shade50 : Colors.green.shade50,
+                                    color:
+                                        isBooked
+                                            ? Colors.red.shade50
+                                            : Colors.green.shade50,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: isBooked ? Colors.red.shade300 : Colors.green.shade300,
+                                      color:
+                                          isBooked
+                                              ? Colors.red.shade300
+                                              : Colors.green.shade300,
                                     ),
                                   ),
                                   child: Row(
@@ -348,7 +391,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       Icon(
                                         isBooked ? Icons.close : Icons.check,
                                         size: 14,
-                                        color: isBooked ? Colors.red : Colors.green,
+                                        color:
+                                            isBooked
+                                                ? Colors.red
+                                                : Colors.green,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -372,7 +418,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   ),
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
                 ],
               );
             },
@@ -427,7 +476,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
       final timeSlot = data['timeSlot'] as String? ?? '';
       final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-      final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+      final status =
+          (data['status'] as String? ?? 'pending').toLowerCase().trim();
 
       // Skip if no time slot
       if (timeSlot.isEmpty) continue;
@@ -498,8 +548,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   if (data == null) continue;
 
                   final timeSlot = data['timeSlot'] as String? ?? '';
-                  final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-                  final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+                  final durationHours =
+                      (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+                  final status =
+                      (data['status'] as String? ?? 'pending')
+                          .toLowerCase()
+                          .trim();
 
                   if (timeSlot.isEmpty) continue;
                   if (status == 'cancelled') continue;
@@ -511,7 +565,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     for (int i = 0; i < durationHoursRounded; i++) {
                       final hour = startHour + i;
                       if (hour <= 23) {
-                        final slot24Hour = '${hour.toString().padLeft(2, '0')}:00';
+                        final slot24Hour =
+                            '${hour.toString().padLeft(2, '0')}:00';
                         // Convert to 12-hour format for comparison with displayed slots
                         final slot12Hour = _formatTime12Hour(slot24Hour);
                         newBookedSlots.add(slot12Hour);
@@ -555,7 +610,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           // Date Picker
                           Text(
                             'Select Date:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           InkWell(
@@ -569,12 +627,17 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 firstDate: now,
                                 lastDate: maxDate,
                                 selectableDayPredicate: (date) {
-                                  return date.isAfter(now.subtract(const Duration(days: 1))) &&
-                                      date.isBefore(maxDate.add(const Duration(days: 1)));
+                                  return date.isAfter(
+                                        now.subtract(const Duration(days: 1)),
+                                      ) &&
+                                      date.isBefore(
+                                        maxDate.add(const Duration(days: 1)),
+                                      );
                                 },
                               );
 
-                              if (picked != null && picked != dialogSelectedDate) {
+                              if (picked != null &&
+                                  picked != dialogSelectedDate) {
                                 // Update global selected date
                                 _selectedDate = picked;
                                 // Reload booked slots for the new date (this will update dialogSelectedDate and clear selection)
@@ -586,21 +649,31 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               decoration: BoxDecoration(
                                 color: Colors.purple.shade50,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.purple.shade300),
+                                border: Border.all(
+                                  color: Colors.purple.shade300,
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.calendar_today, color: Colors.purple.shade700),
+                                  Icon(
+                                    Icons.calendar_today,
+                                    color: Colors.purple.shade700,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
+                                    DateFormat(
+                                      'MMM dd, yyyy',
+                                    ).format(dialogSelectedDate),
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       color: Colors.purple.shade700,
                                     ),
                                   ),
                                   const Spacer(),
-                                  Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                  Icon(
+                                    Icons.arrow_drop_down,
+                                    color: Colors.purple.shade700,
+                                  ),
                                 ],
                               ),
                             ),
@@ -645,7 +718,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           if (_useCustomTime) ...[
                             Text(
                               'Select Custom Time:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             InkWell(
@@ -673,11 +749,16 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 decoration: BoxDecoration(
                                   color: Colors.purple.shade50,
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.purple.shade300),
+                                  border: Border.all(
+                                    color: Colors.purple.shade300,
+                                  ),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.access_time, color: Colors.purple.shade700),
+                                    Icon(
+                                      Icons.access_time,
+                                      color: Colors.purple.shade700,
+                                    ),
                                     const SizedBox(width: 8),
                                     Text(
                                       _customTime != null
@@ -690,7 +771,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       ),
                                     ),
                                     const Spacer(),
-                                    Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                    Icon(
+                                      Icons.arrow_drop_down,
+                                      color: Colors.purple.shade700,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -701,7 +785,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           if (!_useCustomTime) ...[
                             Text(
                               'Select Time Slot:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Wrap(
@@ -709,15 +796,19 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               runSpacing: 8,
                               children:
                                   _timeSlots.map((slot) {
-                                    final isBooked = dialogBookedSlots.contains(slot);
-                                    final isSelected = _selectedTimeSlot == slot;
+                                    final isBooked = dialogBookedSlots.contains(
+                                      slot,
+                                    );
+                                    final isSelected =
+                                        _selectedTimeSlot == slot;
                                     return GestureDetector(
                                       onTap:
                                           isBooked
                                               ? null
                                               : () {
                                                 setDialogState(() {
-                                                  _selectedTimeSlot = isSelected ? null : slot;
+                                                  _selectedTimeSlot =
+                                                      isSelected ? null : slot;
                                                 });
                                               },
                                       child: Container(
@@ -732,7 +823,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                   : isSelected
                                                   ? Colors.purple.shade300
                                                   : Colors.green.shade50,
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                           border: Border.all(
                                             color:
                                                 isBooked
@@ -747,7 +840,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
-                                              isBooked ? Icons.close : Icons.check,
+                                              isBooked
+                                                  ? Icons.close
+                                                  : Icons.check,
                                               size: 14,
                                               color:
                                                   isBooked
@@ -814,7 +909,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 return 'Phone number is required';
                               }
                               // Remove spaces, dashes, and parentheses for validation
-                              final phoneDigits = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                              final phoneDigits = value.replaceAll(
+                                RegExp(r'[\s\-\(\)]'),
+                                '',
+                              );
                               if (phoneDigits.length < 10) {
                                 return 'Phone number must be at least 10 digits';
                               }
@@ -831,7 +929,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             // Duration Selection (for PS5/PS4)
                             Text(
                               'Duration (Hours):',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -869,7 +970,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             const SizedBox(height: 16),
                             Text(
                               'Number of Consoles:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -902,11 +1006,15 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 ),
                               ],
                             ),
-                          ] else if (serviceType == 'Simulator' || serviceType == 'VR') ...[
+                          ] else if (serviceType == 'Simulator' ||
+                              serviceType == 'VR') ...[
                             // Duration Selection (for Simulator/VR in minutes)
                             Text(
                               'Duration (Minutes):',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -916,7 +1024,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   icon: const Icon(Icons.remove_circle_outline),
                                   onPressed: () {
                                     if (_durationMinutes > 15) {
-                                      setDialogState(() => _durationMinutes -= 15);
+                                      setDialogState(
+                                        () => _durationMinutes -= 15,
+                                      );
                                     }
                                   },
                                 ),
@@ -935,7 +1045,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   icon: const Icon(Icons.add_circle_outline),
                                   onPressed: () {
                                     if (_durationMinutes < 240) {
-                                      setDialogState(() => _durationMinutes += 15);
+                                      setDialogState(
+                                        () => _durationMinutes += 15,
+                                      );
                                     }
                                   },
                                 ),
@@ -945,7 +1057,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           ] else if (serviceType == 'Theatre') ...[
                             Text(
                               'Hours:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -983,7 +1098,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             const SizedBox(height: 16),
                             Text(
                               'Total People:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             const SizedBox(height: 8),
                             Row(
@@ -1057,7 +1175,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
   Future<void> _createBooking(BuildContext dialogContext) async {
     // Validate time selection (either regular slot or custom time)
-    final hasTimeSelection = _useCustomTime ? _customTime != null : _selectedTimeSlot != null;
+    final hasTimeSelection =
+        _useCustomTime ? _customTime != null : _selectedTimeSlot != null;
 
     if (_nameController.text.trim().isEmpty ||
         _phoneController.text.trim().isEmpty ||
@@ -1073,7 +1192,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     }
 
     // Validate console count for PS5/PS4
-    if ((_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') && _consoleCount < 1) {
+    if ((_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') &&
+        _consoleCount < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select at least 1 console'),
@@ -1107,8 +1227,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       }
 
       final selectedParts = selectedTime24Hour.split(':');
-      final selectedHour = selectedParts.length == 2 ? int.tryParse(selectedParts[0]) ?? 0 : 0;
-      final selectedMinute = selectedParts.length == 2 ? int.tryParse(selectedParts[1]) ?? 0 : 0;
+      final selectedHour =
+          selectedParts.length == 2 ? int.tryParse(selectedParts[0]) ?? 0 : 0;
+      final selectedMinute =
+          selectedParts.length == 2 ? int.tryParse(selectedParts[1]) ?? 0 : 0;
 
       // Calculate duration based on service type
       double ourDurationHours;
@@ -1125,8 +1247,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       for (var doc in allBookings.docs) {
         final data = doc.data();
         final bookedTimeSlot = data['timeSlot'] as String? ?? '';
-        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        final bookedDuration =
+            (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final status =
+            (data['status'] as String? ?? 'pending').toLowerCase().trim();
 
         // Skip if no time slot
         if (bookedTimeSlot.isEmpty) continue;
@@ -1140,8 +1264,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         // 'pending', 'confirmed', and 'done' bookings will cause conflicts
 
         final bookedParts = bookedTimeSlot.split(':');
-        final bookedHour = bookedParts.length == 2 ? int.tryParse(bookedParts[0]) ?? 0 : 0;
-        final bookedMinute = bookedParts.length == 2 ? int.tryParse(bookedParts[1]) ?? 0 : 0;
+        final bookedHour =
+            bookedParts.length == 2 ? int.tryParse(bookedParts[0]) ?? 0 : 0;
+        final bookedMinute =
+            bookedParts.length == 2 ? int.tryParse(bookedParts[1]) ?? 0 : 0;
 
         // Convert to decimal hours for accurate comparison
         final bookedStartDecimal = bookedHour + (bookedMinute / 60.0);
@@ -1152,9 +1278,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         final ourEndDecimal = ourStartDecimal + ourDurationHours;
 
         // Check if our booking overlaps with existing booking
-        if ((ourStartDecimal >= bookedStartDecimal && ourStartDecimal < bookedEndDecimal) ||
-            (ourEndDecimal > bookedStartDecimal && ourEndDecimal <= bookedEndDecimal) ||
-            (ourStartDecimal <= bookedStartDecimal && ourEndDecimal >= bookedEndDecimal)) {
+        if ((ourStartDecimal >= bookedStartDecimal &&
+                ourStartDecimal < bookedEndDecimal) ||
+            (ourEndDecimal > bookedStartDecimal &&
+                ourEndDecimal <= bookedEndDecimal) ||
+            (ourStartDecimal <= bookedStartDecimal &&
+                ourEndDecimal >= bookedEndDecimal)) {
           hasConflict = true;
           break;
         }
@@ -1164,7 +1293,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('This time slot conflicts with an existing booking'),
+              content: Text(
+                'This time slot conflicts with an existing booking',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -1236,7 +1367,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating booking: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error creating booking: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1265,13 +1399,98 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {
-    final uri = Uri.parse('tel:$phoneNumber');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    } else {
+    // Clean the phone number - remove spaces, dashes, parentheses, and other non-digit characters
+    String cleanedNumber = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+
+    // Check if phone number is valid
+    if (cleanedNumber.isEmpty ||
+        cleanedNumber == 'NA' ||
+        phoneNumber == 'N/A') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cannot make call to $phoneNumber'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('Invalid phone number. Cannot make call.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Ensure phone number has at least 10 digits
+    if (cleanedNumber.length < 10) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Phone number is too short: $cleanedNumber'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      // Try launching directly - some devices don't properly report tel: support via canLaunchUrl
+      // Use tel: format (standard format for phone numbers)
+      Uri uri = Uri.parse('tel:$cleanedNumber');
+
+      // Try to launch the phone dialer
+      // Note: We don't check canLaunchUrl first because some devices incorrectly return false
+      // for tel: URIs even though they can handle them
+      try {
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+
+        if (!launched && mounted) {
+          // If launchUrl returns false, try with platformDefault mode
+          try {
+            await launchUrl(uri, mode: LaunchMode.platformDefault);
+          } catch (e2) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Could not open phone dialer for $cleanedNumber.\n'
+                    'Please ensure your device has phone capability.',
+                  ),
+                  backgroundColor: Colors.orange,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        }
+      } catch (launchError) {
+        // If external application mode fails, try platform default
+        try {
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
+        } catch (e2) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Cannot make call to $cleanedNumber.\n'
+                  'Error: ${e2.toString()}\n'
+                  'Please ensure your device has a phone dialer app installed.',
+                ),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error making call: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -1310,19 +1529,28 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Booking marked as done'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Booking marked as done'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating booking: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error updating booking: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
   }
 
-  Future<void> _deleteBooking(String bookingId, {bool isHistory = false}) async {
+  Future<void> _deleteBooking(
+    String bookingId, {
+    bool isHistory = false,
+  }) async {
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
@@ -1354,17 +1582,25 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       // Delete from appropriate collection
       // Try the specified collection first, then fallback to the other if not found
       bool deleted = false;
-      
+
       if (isHistory) {
         try {
           // Check if document exists in booking_history
-          final doc = await _firestore.collection('booking_history').doc(bookingId).get();
+          final doc =
+              await _firestore
+                  .collection('booking_history')
+                  .doc(bookingId)
+                  .get();
           if (doc.exists) {
-            await _firestore.collection('booking_history').doc(bookingId).delete();
+            await _firestore
+                .collection('booking_history')
+                .doc(bookingId)
+                .delete();
             deleted = true;
           } else {
             // Try bookings collection as fallback
-            final bookingsDoc = await _firestore.collection('bookings').doc(bookingId).get();
+            final bookingsDoc =
+                await _firestore.collection('bookings').doc(bookingId).get();
             if (bookingsDoc.exists) {
               await _firestore.collection('bookings').doc(bookingId).delete();
               deleted = true;
@@ -1376,15 +1612,23 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       } else {
         try {
           // Check if document exists in bookings
-          final doc = await _firestore.collection('bookings').doc(bookingId).get();
+          final doc =
+              await _firestore.collection('bookings').doc(bookingId).get();
           if (doc.exists) {
             await _firestore.collection('bookings').doc(bookingId).delete();
             deleted = true;
           } else {
             // Try booking_history collection as fallback
-            final historyDoc = await _firestore.collection('booking_history').doc(bookingId).get();
+            final historyDoc =
+                await _firestore
+                    .collection('booking_history')
+                    .doc(bookingId)
+                    .get();
             if (historyDoc.exists) {
-              await _firestore.collection('booking_history').doc(bookingId).delete();
+              await _firestore
+                  .collection('booking_history')
+                  .doc(bookingId)
+                  .delete();
               deleted = true;
             }
           }
@@ -1408,7 +1652,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Booking not found. It may have already been deleted.'),
+              content: Text(
+                'Booking not found. It may have already been deleted.',
+              ),
               backgroundColor: Colors.orange,
             ),
           );
@@ -1417,7 +1663,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting booking: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error deleting booking: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -1460,7 +1709,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.calendar_today, color: Colors.purple.shade700, size: 18),
+                Icon(
+                  Icons.calendar_today,
+                  color: Colors.purple.shade700,
+                  size: 18,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Selected Date: ${DateFormat('MMM dd, yyyy').format(_selectedDate)}',
@@ -1540,7 +1793,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
               return Card(
                 elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: InkWell(
                   onTap: () => _checkAvailability(serviceType, _selectedDate),
                   borderRadius: BorderRadius.circular(16),
@@ -1569,7 +1824,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         const SizedBox(height: 4),
                         Text(
                           'Check Availability',
-                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.9)),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
                         ),
                       ],
                     ),
@@ -1596,7 +1854,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                 backgroundColor: Colors.purple.shade700,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 4,
               ),
             ),
@@ -1629,11 +1889,18 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   ),
                   child: Column(
                     children: [
-                      Icon(Icons.event_busy, size: 48, color: Colors.grey.shade400),
+                      Icon(
+                        Icons.event_busy,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
                       const SizedBox(height: 12),
                       Text(
                         'No bookings for this date',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 16,
+                        ),
                       ),
                     ],
                   ),
@@ -1671,7 +1938,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     margin: const EdgeInsets.only(bottom: 6),
                     elevation: 2,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       child: Row(
                         children: [
                           CircleAvatar(
@@ -1701,7 +1971,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     const SizedBox(width: 4),
                                     Text(
                                       timeSlot,
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade700,
+                                      ),
                                     ),
                                     const SizedBox(width: 4),
                                     Container(
@@ -1711,7 +1984,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       ),
                                       decoration: BoxDecoration(
                                         color:
-                                            status == 'confirmed' || status == 'done'
+                                            status == 'confirmed' ||
+                                                    status == 'done'
                                                 ? Colors.green.shade100
                                                 : status == 'cancelled'
                                                 ? Colors.red.shade100
@@ -1724,7 +1998,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold,
                                           color:
-                                              status == 'confirmed' || status == 'done'
+                                              status == 'confirmed' ||
+                                                      status == 'done'
                                                   ? Colors.green.shade700
                                                   : status == 'cancelled'
                                                   ? Colors.red.shade700
@@ -1737,27 +2012,40 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 const SizedBox(height: 2),
                                 Text(
                                   customerName,
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                                 const SizedBox(height: 2),
                                 Row(
                                   children: [
                                     Text(
                                       '${durationHours}h',
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
                                     if (consoleCount != null) ...[
                                       const SizedBox(width: 8),
                                       Text(
                                         '$consoleCount consoles',
-                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
                                       ),
                                     ],
-                                    if (serviceType == 'Theatre' && totalPeople != null) ...[
+                                    if (serviceType == 'Theatre' &&
+                                        totalPeople != null) ...[
                                       const SizedBox(width: 8),
                                       Text(
                                         '$totalPeople people',
-                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
                                       ),
                                     ],
                                   ],
@@ -1773,13 +2061,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 color: Colors.green.shade700,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
-                                onPressed: () => _makePhoneCall(phoneNumber),
+                                onPressed:
+                                    phoneNumber != 'N/A' &&
+                                            phoneNumber.isNotEmpty
+                                        ? () => _makePhoneCall(phoneNumber)
+                                        : null,
                                 tooltip: 'Call $customerName',
                               ),
                               const SizedBox(height: 4),
                               if (status != 'done')
                                 IconButton(
-                                  icon: const Icon(Icons.check_circle, size: 20),
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 20,
+                                  ),
                                   color: Colors.purple.shade700,
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
@@ -1794,9 +2089,13 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 constraints: const BoxConstraints(),
                                 onPressed: () {
                                   // Determine if booking is from history (past date) or active
-                                  final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                                  final bookingDate = data['date'] as String? ?? '';
-                                  final isHistory = bookingDate.compareTo(todayId) < 0;
+                                  final todayId = DateFormat(
+                                    'yyyy-MM-dd',
+                                  ).format(DateTime.now());
+                                  final bookingDate =
+                                      data['date'] as String? ?? '';
+                                  final isHistory =
+                                      bookingDate.compareTo(todayId) < 0;
                                   _deleteBooking(doc.id, isHistory: isHistory);
                                 },
                                 tooltip: 'Delete Booking',
@@ -1863,7 +2162,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: _getServiceColor(serviceType),
-                        child: Icon(_getServiceIcon(serviceType), color: Colors.white),
+                        child: Icon(
+                          _getServiceIcon(serviceType),
+                          color: Colors.white,
+                        ),
                       ),
                       title: Text(serviceType),
                       onTap: () {
@@ -1874,7 +2176,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   }).toList(),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
             ],
           ),
     );
@@ -1922,7 +2227,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(8),
@@ -1930,21 +2238,35 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.calendar_today, color: Colors.purple.shade700, size: 16),
+                        Icon(
+                          Icons.calendar_today,
+                          color: Colors.purple.shade700,
+                          size: 16,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            DateFormat('MMM dd, yyyy').format(_historyFilterDate),
-                            style: TextStyle(fontSize: 14, color: Colors.purple.shade700),
+                            DateFormat(
+                              'MMM dd, yyyy',
+                            ).format(_historyFilterDate),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.purple.shade700,
+                            ),
                           ),
                         ),
                         IconButton(
-                          icon: Icon(Icons.clear, size: 18, color: Colors.purple.shade700),
+                          icon: Icon(
+                            Icons.clear,
+                            size: 18,
+                            color: Colors.purple.shade700,
+                          ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                           onPressed: () {
                             setState(() {
-                              _historyFilterDate = DateTime.now(); // Reset to current date
+                              _historyFilterDate =
+                                  DateTime.now(); // Reset to current date
                             });
                           },
                           tooltip: 'Reset to Today',
@@ -1973,7 +2295,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
               // Also get archived bookings
               return FutureBuilder<QuerySnapshot>(
-                future: _firestore.collection('booking_history').limit(100).get(),
+                future:
+                    _firestore.collection('booking_history').limit(100).get(),
                 builder: (context, archiveSnapshot) {
                   // Combine done bookings and archived bookings
                   // Track which collection each booking came from
@@ -1988,7 +2311,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     }
                   }
 
-                  if (archiveSnapshot.hasData && archiveSnapshot.data!.docs.isNotEmpty) {
+                  if (archiveSnapshot.hasData &&
+                      archiveSnapshot.data!.docs.isNotEmpty) {
                     for (var doc in archiveSnapshot.data!.docs) {
                       allBookings.add({
                         'doc': doc,
@@ -1998,7 +2322,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   }
 
                   // Apply date filter
-                  final filterDateId = DateFormat('yyyy-MM-dd').format(_historyFilterDate);
+                  final filterDateId = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(_historyFilterDate);
                   allBookings =
                       allBookings.where((item) {
                         final doc = item['doc'] as QueryDocumentSnapshot;
@@ -2012,11 +2338,18 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.history, size: 64, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.history,
+                            size: 64,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             'No completed bookings for ${DateFormat('MMM dd, yyyy').format(_historyFilterDate)}',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 16,
+                            ),
                           ),
                         ],
                       ),
@@ -2061,14 +2394,19 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       final durationHours = data['durationHours'] ?? 1;
                       final consoleCount = data['consoleCount'];
                       final totalPeople = data['totalPeople'];
-                      final date = (data['dateTimestamp'] as Timestamp?)?.toDate();
-                      final completedAt = (data['completedAt'] as Timestamp?)?.toDate();
+                      final date =
+                          (data['dateTimestamp'] as Timestamp?)?.toDate();
+                      final completedAt =
+                          (data['completedAt'] as Timestamp?)?.toDate();
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 6),
                         elevation: 2,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           child: Row(
                             children: [
                               CircleAvatar(
@@ -2143,7 +2481,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                             ),
                                           ),
                                         ],
-                                        if (serviceType == 'Theatre' && totalPeople != null) ...[
+                                        if (serviceType == 'Theatre' &&
+                                            totalPeople != null) ...[
                                           const SizedBox(width: 8),
                                           Text(
                                             '$totalPeople people',
@@ -2177,7 +2516,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     color: Colors.green.shade700,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
-                                    onPressed: () => _makePhoneCall(phoneNumber),
+                                    onPressed:
+                                        phoneNumber != 'N/A' &&
+                                                phoneNumber.isNotEmpty
+                                            ? () => _makePhoneCall(phoneNumber)
+                                            : null,
                                     tooltip: 'Call $customerName',
                                   ),
                                   const SizedBox(height: 4),
@@ -2186,7 +2529,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     color: Colors.red.shade700,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
-                                    onPressed: () => _deleteBooking(doc.id, isHistory: isHistory),
+                                    onPressed:
+                                        () => _deleteBooking(
+                                          doc.id,
+                                          isHistory: isHistory,
+                                        ),
                                     tooltip: 'Delete from History',
                                   ),
                                 ],
