@@ -54,7 +54,6 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
     );
   }
 
-
   void _quickAdd(String type, int count, int hours, int minutes, int additionalControllers) async {
     // Calculate price for one device
     double singlePrice = 0.0;
@@ -236,18 +235,19 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   debugPrint('Error sorting scenarios: $e');
                 }
 
-                scenarios = docs.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return {
-                    'id': doc.id,
-                    'type': data['type'] ?? 'PS5',
-                    'count': data['count'] ?? 1,
-                    'hours': data['hours'] ?? 1,
-                    'minutes': data['minutes'] ?? 0,
-                    'additionalControllers': data['additionalControllers'] ?? 0,
-                    'label': data['label'] ?? '',
-                  };
-                }).toList();
+                scenarios =
+                    docs.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return {
+                        'id': doc.id,
+                        'type': data['type'] ?? 'PS5',
+                        'count': data['count'] ?? 1,
+                        'hours': data['hours'] ?? 1,
+                        'minutes': data['minutes'] ?? 0,
+                        'additionalControllers': data['additionalControllers'] ?? 0,
+                        'label': data['label'] ?? '',
+                      };
+                    }).toList();
               }
 
               if (scenarios.isEmpty) {
@@ -260,22 +260,16 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.blue.shade200,
-                    width: 1,
-                  ),
+                  border: Border.all(color: Colors.blue.shade200, width: 1),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
+
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.flash_on,
-                          size: 18,
-                          color: Colors.blue.shade700,
-                        ),
+                        Icon(Icons.flash_on, size: 18, color: Colors.blue.shade700),
                         const SizedBox(width: 6),
                         Text(
                           'Quick Add',
@@ -291,61 +285,73 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: scenarios.map((scenario) {
-                        final type = scenario['type'] as String? ?? 'PS5';
-                        final count = (scenario['count'] as num?)?.toInt() ?? 1;
-                        final hours = (scenario['hours'] as num?)?.toInt() ?? 1;
-                        final minutes = (scenario['minutes'] as num?)?.toInt() ?? 0;
-                        final additionalControllers = (scenario['additionalControllers'] as num?)?.toInt() ?? 0;
-                        final label = scenario['label'] as String? ?? 
-                            '$count $type${hours > 0 ? ' ${hours}h' : ''}${additionalControllers > 0 ? ' Multi' : ''}';
-                        final color = type == 'PS5' ? Colors.blue : Colors.purple;
-                        
-                        return Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _quickAdd(type, count, hours, minutes, additionalControllers),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: color,
+                      children:
+                          scenarios.map((scenario) {
+                            final type = scenario['type'] as String? ?? 'PS5';
+                            final count = (scenario['count'] as num?)?.toInt() ?? 1;
+                            final hours = (scenario['hours'] as num?)?.toInt() ?? 1;
+                            final minutes = (scenario['minutes'] as num?)?.toInt() ?? 0;
+                            final additionalControllers =
+                                (scenario['additionalControllers'] as num?)?.toInt() ?? 0;
+                            final label =
+                                scenario['label'] as String? ??
+                                '$count $type${hours > 0 ? ' ${hours}h' : ''}${additionalControllers > 0 ? ' Multi' : ''}';
+                            final color = type == 'PS5' ? Colors.blue : Colors.purple;
+
+                            return Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap:
+                                    () => _quickAdd(
+                                      type,
+                                      count,
+                                      hours,
+                                      minutes,
+                                      additionalControllers,
+                                    ),
                                 borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: color.withOpacity(0.3),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: color.withOpacity(0.3),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    additionalControllers > 0 ? Icons.people : Icons.sports_esports,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      label,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        additionalControllers > 0
+                                            ? Icons.people
+                                            : Icons.sports_esports,
+                                        size: 16,
                                         color: Colors.white,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                            );
+                          }).toList(),
                     ),
                   ],
                 ),
@@ -430,7 +436,8 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: device['type'] == 'PS5' ? Colors.blue : Colors.purple,
+                              backgroundColor:
+                                  device['type'] == 'PS5' ? Colors.blue : Colors.purple,
                               child: Text(
                                 device['type'],
                                 style: const TextStyle(
@@ -614,24 +621,24 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     } catch (e) {
       // Use defaults
     }
-    
+
     if (widget.deviceType == 'PS4') {
       deviceHourlyRate = ps4Rate;
     } else if (widget.deviceType == 'PS5') {
       deviceHourlyRate = ps5Rate;
     }
-    
+
     // Calculate breakdown
     psChargesForHours = (hours * deviceHourlyRate).toDouble();
     controllerChargesForHours = (hours * additionalControllers * controllerPrice).toDouble();
-    
+
     // Calculate additional minutes
     double baseHourlyRate = deviceHourlyRate + (additionalControllers * controllerPrice);
     additionalMinutesPrice = 0.0;
     if (minutes > 0) {
       additionalMinutesPrice = (baseHourlyRate / 2) * (minutes / 30.0);
     }
-    
+
     // Calculate total price
     if (widget.deviceType == 'PS4') {
       price = await PriceCalculator.ps4Price(
@@ -657,73 +664,110 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              Column(
-                children: [
-                  const Text('Hours', style: TextStyle(fontSize: 16)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () {
-                          if (hours > 0) {
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Column(
+                  children: [
+                    const Text('Hours', style: TextStyle(fontSize: 16)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () {
+                            if (hours > 0) {
+                              setState(() {
+                                hours--;
+                                _calculatePrice();
+                              });
+                            }
+                          },
+                        ),
+                        Text(
+                          '$hours',
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () {
                             setState(() {
-                              hours--;
+                              hours++;
                               _calculatePrice();
                             });
-                          }
-                        },
-                      ),
-                      Text(
-                        '$hours',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: () {
-                          setState(() {
-                            hours++;
-                            _calculatePrice();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Column(
+                  children: [
+                    const Text('Minutes', style: TextStyle(fontSize: 16)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () {
+                            if (minutes > 0) {
+                              setState(() {
+                                minutes -= 15;
+                                if (minutes < 0) minutes = 0;
+                                _calculatePrice();
+                              });
+                            }
+                          },
+                        ),
+                        Text(
+                          '$minutes',
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () {
+                            setState(() {
+                              minutes += 15;
+                              if (minutes >= 60) {
+                                hours += minutes ~/ 60;
+                                minutes = minutes % 60;
+                              }
+                              _calculatePrice();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Additional Controllers Toggle and Selection
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
               ),
-              Column(
+              child: Column(
                 children: [
-                  const Text('Minutes', style: TextStyle(fontSize: 16)),
-                  const SizedBox(height: 8),
+                  // Toggle Switch Row
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () {
-                          if (minutes > 0) {
-                            setState(() {
-                              minutes -= 15;
-                              if (minutes < 0) minutes = 0;
-                              _calculatePrice();
-                            });
-                          }
-                        },
+                      const Text(
+                        'Additional Controllers',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                      Text(
-                        '$minutes',
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: () {
+                      Switch(
+                        value: enableAdditionalControllers,
+                        onChanged: (value) {
                           setState(() {
-                            minutes += 15;
-                            if (minutes >= 60) {
-                              hours += minutes ~/ 60;
-                              minutes = minutes % 60;
+                            enableAdditionalControllers = value;
+                            if (!value) {
+                              // Reset to 0 when disabled
+                              additionalControllers = 0;
                             }
                             _calculatePrice();
                           });
@@ -731,214 +775,186 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // Additional Controllers Toggle and Selection
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                // Toggle Switch Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Additional Controllers',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    Switch(
-                      value: enableAdditionalControllers,
-                      onChanged: (value) {
-                        setState(() {
-                          enableAdditionalControllers = value;
-                          if (!value) {
-                            // Reset to 0 when disabled
-                            additionalControllers = 0;
-                          }
-                          _calculatePrice();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                // Controller Selection (only shown when enabled)
-                if (enableAdditionalControllers) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Rs ${controllerPrice.toStringAsFixed(0)} per controller per hour',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  if (hours > 0 && additionalControllers > 0) ...[
-                    const SizedBox(height: 4),
+                  // Controller Selection (only shown when enabled)
+                  if (enableAdditionalControllers) ...[
+                    const SizedBox(height: 8),
                     Text(
-                      'Controller charges for ${hours}h: Rs ${(hours * additionalControllers * controllerPrice).toStringAsFixed(2)}',
-                      style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.w500),
+                      'Rs ${controllerPrice.toStringAsFixed(0)} per controller per hour',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () {
-                          if (additionalControllers > 0) {
+                    if (hours > 0 && additionalControllers > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Controller charges for ${hours}h: Rs ${(hours * additionalControllers * controllerPrice).toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () {
+                            if (additionalControllers > 0) {
+                              setState(() {
+                                additionalControllers--;
+                                _calculatePrice();
+                              });
+                            }
+                          },
+                        ),
+                        Container(
+                          width: 60,
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$additionalControllers',
+                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () {
                             setState(() {
-                              additionalControllers--;
+                              additionalControllers++;
                               _calculatePrice();
                             });
-                          }
-                        },
-                      ),
-                      Container(
-                        width: 60,
-                        alignment: Alignment.center,
-                        child: Text(
-                          '$additionalControllers',
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          },
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        onPressed: () {
-                          setState(() {
-                            additionalControllers++;
-                            _calculatePrice();
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Total Time
-                Text(
-                  'Total Time: ${hours}h ${minutes}m',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                // Detailed Breakdown
-                const Text(
-                  'Price Breakdown:',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                // PS Charges
-                if (hours > 0) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '${widget.deviceType} charges (${hours}h × Rs ${deviceHourlyRate.toStringAsFixed(0)}):',
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Rs ${psChargesForHours.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                // Controller Charges
-                if (additionalControllers > 0 && hours > 0) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Controller charges (${additionalControllers} × Rs ${controllerPrice.toStringAsFixed(0)} × ${hours}h):',
-                          style: TextStyle(fontSize: 12, color: Colors.green.shade700),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Rs ${controllerChargesForHours.toStringAsFixed(2)}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.green.shade700),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                // Additional Minutes
-                if (minutes > 0) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Additional ${minutes}m (50% of hourly rate):',
-                          style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Rs ${additionalMinutesPrice.toStringAsFixed(2)}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.orange.shade700),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                const Divider(height: 16),
-                // Total Price
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Total Price:',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'Rs ${price.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue,
-                      ),
+                      ],
                     ),
                   ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Note: Additional minutes are charged at half the hourly rate',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Total Time
+                  Text(
+                    'Total Time: ${hours}h ${minutes}m',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  // Detailed Breakdown
+                  const Text(
+                    'Price Breakdown:',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  // PS Charges
+                  if (hours > 0) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            '${widget.deviceType} charges (${hours}h × Rs ${deviceHourlyRate.toStringAsFixed(0)}):',
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Rs ${psChargesForHours.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  // Controller Charges
+                  if (additionalControllers > 0 && hours > 0) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Controller charges (${additionalControllers} × Rs ${controllerPrice.toStringAsFixed(0)} × ${hours}h):',
+                            style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Rs ${controllerChargesForHours.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  // Additional Minutes
+                  if (minutes > 0) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Additional ${minutes}m (50% of hourly rate):',
+                            style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Rs ${additionalMinutesPrice.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                  ],
+                  const Divider(height: 16),
+                  // Total Price
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Total Price:',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Rs ${price.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Note: Additional minutes are charged at half the hourly rate',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -957,4 +973,3 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     );
   }
 }
-

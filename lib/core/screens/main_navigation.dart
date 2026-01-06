@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dashboard_page.dart';
 import 'history_page.dart';
 import 'finance_tab.dart';
+import 'bookings_page.dart';
 import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
 
@@ -20,6 +21,7 @@ class _MainNavigationState extends State<MainNavigation> {
     const DashboardPage(),
     const HistoryPage(),
     FinanceTab(key: _financeTabKey),
+    const BookingsPage(),
     const SettingsPlaceholder(),
   ];
 
@@ -75,6 +77,10 @@ class _MainNavigationState extends State<MainNavigation> {
             BottomNavigationBarItem(
               icon: Icon(Icons.account_balance_wallet),
               label: 'Finance',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.event),
+              label: 'Bookings',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings),
