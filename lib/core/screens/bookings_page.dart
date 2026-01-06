@@ -20,7 +20,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   int _consoleCount = 1; // For PS5/PS4
   int _theatreHours = 1; // For Theatre
   int _theatrePeople = 1; // For Theatre
-  int _durationHours = 1; // Duration in hours for all services
+  int _durationHours = 1; // Duration in hours for PS5/PS4
+  int _durationMinutes = 30; // Duration in minutes for Simulator/VR
   late TabController _tabController;
 
   final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
@@ -83,15 +84,17 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     for (var doc in bookings) {
       final data = doc.data() as Map<String, dynamic>;
       final timeSlot = data['timeSlot'] as String? ?? '';
-      final durationHours = (data['durationHours'] as num?)?.toInt() ?? 1;
+      final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
 
       if (timeSlot.isNotEmpty) {
         // Parse time slot (e.g., "14:00")
         final parts = timeSlot.split(':');
         if (parts.length == 2) {
           final startHour = int.tryParse(parts[0]) ?? 0;
+          // Use ceil to round up - if booking is 30 minutes (0.5 hours), mark the hour as booked
+          final durationHoursRounded = durationHours.ceil();
           // Mark all slots within the duration as booked
-          for (int i = 0; i < durationHours; i++) {
+          for (int i = 0; i < durationHoursRounded; i++) {
             final hour = startHour + i;
             if (hour <= 23) {
               final slot = '${hour.toString().padLeft(2, '0')}:00';
@@ -183,6 +186,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     _consoleCount = 1;
     _theatreHours = 1;
     _theatrePeople = 1;
+    _durationHours = 1;
+    _durationMinutes = 30;
 
     // Get existing bookings for this date and service type
     final dateId = DateFormat('yyyy-MM-dd').format(date);
@@ -199,7 +204,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       if (data == null) continue;
       
       final timeSlot = data['timeSlot'] as String? ?? '';
-      final durationHours = (data['durationHours'] as num?)?.toInt() ?? 1;
+      final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
       final status = data['status'] as String? ?? 'pending';
       
       // Only consider active bookings (not done)
@@ -208,7 +213,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       final parts = timeSlot.split(':');
       if (parts.length == 2) {
         final startHour = int.tryParse(parts[0]) ?? 0;
-        for (int i = 0; i < durationHours; i++) {
+        // Use ceil to round up - if booking is 30 minutes (0.5 hours), mark the hour as booked
+        final durationHoursRounded = durationHours.ceil();
+        for (int i = 0; i < durationHoursRounded; i++) {
           final hour = startHour + i;
           if (hour <= 23) {
             final slot = '${hour.toString().padLeft(2, '0')}:00';
@@ -356,44 +363,44 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             keyboardType: TextInputType.phone,
                           ),
                           const SizedBox(height: 16),
-                          // Duration Selection (for all services)
-                          Text(
-                            'Duration (Hours):',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: () {
-                                  if (_durationHours > 1) {
-                                    setDialogState(() => _durationHours--);
-                                  }
-                                },
-                              ),
-                              Container(
-                                width: 60,
-                                alignment: Alignment.center,
-                                child: Text(
-                                  '$_durationHours',
-                                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline),
-                                onPressed: () {
-                                  if (_durationHours < 8) {
-                                    setDialogState(() => _durationHours++);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
                           // Service-specific fields
                           if (serviceType == 'PS5' || serviceType == 'PS4') ...[
+                            // Duration Selection (for PS5/PS4)
+                            Text(
+                              'Duration (Hours):',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed: () {
+                                    if (_durationHours > 1) {
+                                      setDialogState(() => _durationHours--);
+                                    }
+                                  },
+                                ),
+                                Container(
+                                  width: 60,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '$_durationHours',
+                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed: () {
+                                    if (_durationHours < 8) {
+                                      setDialogState(() => _durationHours++);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
                             Text(
                               'Number of Consoles:',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -429,6 +436,43 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 ),
                               ],
                             ),
+                          ] else if (serviceType == 'Simulator' || serviceType == 'VR') ...[
+                            // Duration Selection (for Simulator/VR in minutes)
+                            Text(
+                              'Duration (Minutes):',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed: () {
+                                    if (_durationMinutes > 15) {
+                                      setDialogState(() => _durationMinutes -= 15);
+                                    }
+                                  },
+                                ),
+                                Container(
+                                  width: 80,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '$_durationMinutes min',
+                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed: () {
+                                    if (_durationMinutes < 240) {
+                                      setDialogState(() => _durationMinutes += 15);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
                           ] else if (serviceType == 'Theatre') ...[
                             Text(
                               'Hours:',
@@ -573,12 +617,22 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       final selectedParts = _selectedTimeSlot!.split(':');
       final selectedHour = selectedParts.length == 2 ? int.tryParse(selectedParts[0]) ?? 0 : 0;
 
+      // Calculate duration based on service type
+      double ourDurationHours;
+      if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+        ourDurationHours = _durationMinutes / 60.0; // Convert minutes to hours
+      } else if (_selectedServiceType == 'Theatre') {
+        ourDurationHours = _theatreHours.toDouble();
+      } else {
+        ourDurationHours = _durationHours.toDouble();
+      }
+
       // Check if any existing booking overlaps with our selected time slot
       bool hasConflict = false;
       for (var doc in allBookings.docs) {
         final data = doc.data();
         final bookedTimeSlot = data['timeSlot'] as String? ?? '';
-        final bookedDuration = (data['durationHours'] as num?)?.toInt() ?? 1;
+        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
 
         if (bookedTimeSlot.isNotEmpty) {
           final bookedParts = bookedTimeSlot.split(':');
@@ -586,7 +640,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
           final bookedEndHour = bookedHour + bookedDuration;
 
           // Check if our booking overlaps with existing booking
-          final ourEndHour = selectedHour + _durationHours;
+          final ourEndHour = selectedHour + ourDurationHours;
           if ((selectedHour >= bookedHour && selectedHour < bookedEndHour) ||
               (ourEndHour > bookedHour && ourEndHour <= bookedEndHour) ||
               (selectedHour <= bookedHour && ourEndHour >= bookedEndHour)) {
@@ -608,17 +662,29 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         return;
       }
 
+      // Calculate duration based on service type
+      double durationHours;
+      if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+        durationHours = _durationMinutes / 60.0; // Convert minutes to hours
+      } else if (_selectedServiceType == 'Theatre') {
+        durationHours = _theatreHours.toDouble();
+      } else {
+        durationHours = _durationHours.toDouble();
+      }
+
       final bookingData = {
         'serviceType': _selectedServiceType,
         'date': dateId,
         'dateTimestamp': Timestamp.fromDate(_selectedDate),
         'timeSlot': _selectedTimeSlot,
-        'durationHours': _durationHours,
+        'durationHours': durationHours,
         'customerName': _nameController.text.trim(),
         'phoneNumber': _phoneController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
         if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4')
           'consoleCount': _consoleCount,
+        if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR')
+          'durationMinutes': _durationMinutes,
         if (_selectedServiceType == 'Theatre') ...{
           'hours': _theatreHours,
           'totalPeople': _theatrePeople,
