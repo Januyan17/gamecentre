@@ -17,6 +17,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   DateTime _historyFilterDate =
       DateTime.now(); // Date filter for history tab (initially current date)
   String? _selectedTimeSlot;
+  bool _useCustomTime = false; // Toggle for custom time selection
+  TimeOfDay? _customTime; // Selected custom time
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   int _consoleCount = 1; // For PS5/PS4
@@ -381,6 +383,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     _selectedServiceType = serviceType;
     _selectedDate = date;
     _selectedTimeSlot = null;
+    _useCustomTime = false;
+    _customTime = null;
     _nameController.clear();
     _phoneController.clear();
     _consoleCount = 1;
@@ -601,84 +605,177 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             ),
                           ),
                           const SizedBox(height: 16),
-                          // Time Slot Selection
-                          Text(
-                            'Select Time Slot:',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          // Custom Time Toggle
+                          Row(
+                            children: [
+                              Switch(
+                                value: _useCustomTime,
+                                onChanged: (value) {
+                                  setDialogState(() {
+                                    _useCustomTime = value;
+                                    if (value) {
+                                      // Clear regular time slot selection when enabling custom time
+                                      _selectedTimeSlot = null;
+                                      // Initialize custom time to current time if not set
+                                      _customTime ??= TimeOfDay.now();
+                                    } else {
+                                      // Clear custom time when disabling
+                                      _customTime = null;
+                                    }
+                                  });
+                                },
+                                activeColor: Colors.purple.shade700,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Use Custom Time',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.purple.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children:
-                                _timeSlots.map((slot) {
-                                  final isBooked = dialogBookedSlots.contains(slot);
-                                  final isSelected = _selectedTimeSlot == slot;
-                                  return GestureDetector(
-                                    onTap:
-                                        isBooked
-                                            ? null
-                                            : () {
-                                              setDialogState(() {
-                                                _selectedTimeSlot = isSelected ? null : slot;
-                                              });
-                                            },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            isBooked
-                                                ? Colors.red.shade50
-                                                : isSelected
-                                                ? Colors.purple.shade300
-                                                : Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color:
-                                              isBooked
-                                                  ? Colors.red.shade300
-                                                  : isSelected
-                                                  ? Colors.purple.shade700
-                                                  : Colors.green.shade300,
-                                          width: isSelected ? 2 : 1,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            isBooked ? Icons.close : Icons.check,
-                                            size: 14,
-                                            color:
-                                                isBooked
-                                                    ? Colors.red
-                                                    : isSelected
-                                                    ? Colors.white
-                                                    : Colors.green,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            slot,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                              color:
-                                                  isBooked
-                                                      ? Colors.red.shade700
-                                                      : isSelected
-                                                      ? Colors.white
-                                                      : Colors.green.shade700,
-                                            ),
-                                          ),
-                                        ],
+                          const SizedBox(height: 12),
+                          // Custom Time Picker (shown when toggle is enabled)
+                          if (_useCustomTime) ...[
+                            Text(
+                              'Select Custom Time:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () async {
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: _customTime ?? TimeOfDay.now(),
+                                  builder: (context, child) {
+                                    return MediaQuery(
+                                      data: MediaQuery.of(
+                                        context,
+                                      ).copyWith(alwaysUse24HourFormat: false),
+                                      child: child!,
+                                    );
+                                  },
+                                );
+                                if (picked != null) {
+                                  setDialogState(() {
+                                    _customTime = picked;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.purple.shade300),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.access_time, color: Colors.purple.shade700),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _customTime != null
+                                          ? _customTime!.format(context)
+                                          : 'Select Time',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16,
+                                        color: Colors.purple.shade700,
                                       ),
                                     ),
-                                  );
-                                }).toList(),
-                          ),
+                                    const Spacer(),
+                                    Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          // Time Slot Selection (shown when custom time is disabled)
+                          if (!_useCustomTime) ...[
+                            Text(
+                              'Select Time Slot:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children:
+                                  _timeSlots.map((slot) {
+                                    final isBooked = dialogBookedSlots.contains(slot);
+                                    final isSelected = _selectedTimeSlot == slot;
+                                    return GestureDetector(
+                                      onTap:
+                                          isBooked
+                                              ? null
+                                              : () {
+                                                setDialogState(() {
+                                                  _selectedTimeSlot = isSelected ? null : slot;
+                                                });
+                                              },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              isBooked
+                                                  ? Colors.red.shade50
+                                                  : isSelected
+                                                  ? Colors.purple.shade300
+                                                  : Colors.green.shade50,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color:
+                                                isBooked
+                                                    ? Colors.red.shade300
+                                                    : isSelected
+                                                    ? Colors.purple.shade700
+                                                    : Colors.green.shade300,
+                                            width: isSelected ? 2 : 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isBooked ? Icons.close : Icons.check,
+                                              size: 14,
+                                              color:
+                                                  isBooked
+                                                      ? Colors.red
+                                                      : isSelected
+                                                      ? Colors.white
+                                                      : Colors.green,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              slot,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                                color:
+                                                    isBooked
+                                                        ? Colors.red.shade700
+                                                        : isSelected
+                                                        ? Colors.white
+                                                        : Colors.green.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                            ),
+                          ],
                           const SizedBox(height: 20),
                           // Customer Name
                           TextFormField(
@@ -725,7 +822,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               }
                               return null;
                             },
-                            maxLength: 15,
+                            maxLength: 10,
                           ),
                           const SizedBox(height: 16),
                           // Service-specific fields
@@ -958,9 +1055,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   }
 
   Future<void> _createBooking(BuildContext dialogContext) async {
+    // Validate time selection (either regular slot or custom time)
+    final hasTimeSelection = _useCustomTime ? _customTime != null : _selectedTimeSlot != null;
+
     if (_nameController.text.trim().isEmpty ||
         _phoneController.text.trim().isEmpty ||
-        _selectedTimeSlot == null ||
+        !hasTimeSelection ||
         _selectedServiceType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -994,9 +1094,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
               .get();
 
       // Parse selected time slot (convert from 12-hour to 24-hour format for comparison)
-      final selectedTime24Hour = _formatTime24Hour(_selectedTimeSlot!);
+      // Handle both regular time slot and custom time
+      String selectedTime24Hour;
+      if (_useCustomTime && _customTime != null) {
+        // Convert custom time to 24-hour format string
+        final hour = _customTime!.hour.toString().padLeft(2, '0');
+        final minute = _customTime!.minute.toString().padLeft(2, '0');
+        selectedTime24Hour = '$hour:$minute';
+      } else {
+        selectedTime24Hour = _formatTime24Hour(_selectedTimeSlot!);
+      }
+
       final selectedParts = selectedTime24Hour.split(':');
       final selectedHour = selectedParts.length == 2 ? int.tryParse(selectedParts[0]) ?? 0 : 0;
+      final selectedMinute = selectedParts.length == 2 ? int.tryParse(selectedParts[1]) ?? 0 : 0;
 
       // Calculate duration based on service type
       double ourDurationHours;
@@ -1029,13 +1140,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
         final bookedParts = bookedTimeSlot.split(':');
         final bookedHour = bookedParts.length == 2 ? int.tryParse(bookedParts[0]) ?? 0 : 0;
-        final bookedEndHour = bookedHour + bookedDuration;
+        final bookedMinute = bookedParts.length == 2 ? int.tryParse(bookedParts[1]) ?? 0 : 0;
+
+        // Convert to decimal hours for accurate comparison
+        final bookedStartDecimal = bookedHour + (bookedMinute / 60.0);
+        final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+
+        // Convert our selected time to decimal hours
+        final ourStartDecimal = selectedHour + (selectedMinute / 60.0);
+        final ourEndDecimal = ourStartDecimal + ourDurationHours;
 
         // Check if our booking overlaps with existing booking
-        final ourEndHour = selectedHour + ourDurationHours;
-        if ((selectedHour >= bookedHour && selectedHour < bookedEndHour) ||
-            (ourEndHour > bookedHour && ourEndHour <= bookedEndHour) ||
-            (selectedHour <= bookedHour && ourEndHour >= bookedEndHour)) {
+        if ((ourStartDecimal >= bookedStartDecimal && ourStartDecimal < bookedEndDecimal) ||
+            (ourEndDecimal > bookedStartDecimal && ourEndDecimal <= bookedEndDecimal) ||
+            (ourStartDecimal <= bookedStartDecimal && ourEndDecimal >= bookedEndDecimal)) {
           hasConflict = true;
           break;
         }
@@ -1064,7 +1182,16 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       }
 
       // Convert selected time slot from 12-hour to 24-hour format for storage
-      final timeSlot24Hour = _formatTime24Hour(_selectedTimeSlot!);
+      // Handle both regular time slot and custom time
+      String timeSlot24Hour;
+      if (_useCustomTime && _customTime != null) {
+        // Convert custom time to 24-hour format string
+        final hour = _customTime!.hour.toString().padLeft(2, '0');
+        final minute = _customTime!.minute.toString().padLeft(2, '0');
+        timeSlot24Hour = '$hour:$minute';
+      } else {
+        timeSlot24Hour = _formatTime24Hour(_selectedTimeSlot!);
+      }
 
       final bookingData = {
         'serviceType': _selectedServiceType,
@@ -1100,6 +1227,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         _selectedServiceType = null;
         _selectedDate = DateTime.now();
         _selectedTimeSlot = null;
+        _useCustomTime = false;
+        _customTime = null;
         _nameController.clear();
         _phoneController.clear();
       }
