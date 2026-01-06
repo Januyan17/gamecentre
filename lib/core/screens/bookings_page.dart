@@ -174,7 +174,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     );
   }
 
-  void _showBookingDialog(String serviceType, DateTime date) {
+  void _showBookingDialog(String serviceType, DateTime date) async {
     _selectedServiceType = serviceType;
     _selectedDate = date;
     _selectedTimeSlot = null;
@@ -183,6 +183,42 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     _consoleCount = 1;
     _theatreHours = 1;
     _theatrePeople = 1;
+
+    // Get existing bookings for this date and service type
+    final dateId = DateFormat('yyyy-MM-dd').format(date);
+    final existingBookings = await _firestore
+        .collection('bookings')
+        .where('date', isEqualTo: dateId)
+        .where('serviceType', isEqualTo: serviceType)
+        .get();
+
+    // Calculate booked slots considering duration
+    final Set<String> bookedSlots = {};
+    for (var doc in existingBookings.docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+      
+      final timeSlot = data['timeSlot'] as String? ?? '';
+      final durationHours = (data['durationHours'] as num?)?.toInt() ?? 1;
+      final status = data['status'] as String? ?? 'pending';
+      
+      // Only consider active bookings (not done)
+      if (status == 'done' || timeSlot.isEmpty) continue;
+      
+      final parts = timeSlot.split(':');
+      if (parts.length == 2) {
+        final startHour = int.tryParse(parts[0]) ?? 0;
+        for (int i = 0; i < durationHours; i++) {
+          final hour = startHour + i;
+          if (hour <= 23) {
+            final slot = '${hour.toString().padLeft(2, '0')}:00';
+            bookedSlots.add(slot);
+          }
+        }
+      }
+    }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -238,24 +274,65 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children:
-                                _timeSlots.map((slot) {
-                                  final isSelected = _selectedTimeSlot == slot;
-                                  return ChoiceChip(
-                                    label: Text(slot),
-                                    selected: isSelected,
-                                    onSelected: (selected) {
-                                      setDialogState(() {
-                                        _selectedTimeSlot = selected ? slot : null;
-                                      });
-                                    },
-                                    selectedColor: Colors.purple.shade300,
-                                    labelStyle: TextStyle(
-                                      color: isSelected ? Colors.white : Colors.black87,
-                                      fontWeight: FontWeight.w600,
+                            children: _timeSlots.map((slot) {
+                              final isBooked = bookedSlots.contains(slot);
+                              final isSelected = _selectedTimeSlot == slot;
+                              return GestureDetector(
+                                onTap: isBooked
+                                    ? null
+                                    : () {
+                                        setDialogState(() {
+                                          _selectedTimeSlot = isSelected ? null : slot;
+                                        });
+                                      },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isBooked
+                                        ? Colors.red.shade50
+                                        : isSelected
+                                            ? Colors.purple.shade300
+                                            : Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isBooked
+                                          ? Colors.red.shade300
+                                          : isSelected
+                                              ? Colors.purple.shade700
+                                              : Colors.green.shade300,
+                                      width: isSelected ? 2 : 1,
                                     ),
-                                  );
-                                }).toList(),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isBooked ? Icons.close : Icons.check,
+                                        size: 14,
+                                        color: isBooked
+                                            ? Colors.red
+                                            : isSelected
+                                                ? Colors.white
+                                                : Colors.green,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        slot,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: isBooked
+                                              ? Colors.red.shade700
+                                              : isSelected
+                                                  ? Colors.white
+                                                  : Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           ),
                           const SizedBox(height: 20),
                           // Customer Name

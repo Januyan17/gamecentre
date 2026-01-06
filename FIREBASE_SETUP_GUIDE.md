@@ -62,3 +62,5 @@ If you're just testing and don't want to add fingerprints right now, the app sho
 - Google Services plugin: ✅ (configured correctly)
 - The issue is just missing SHA fingerprints in Firebase Console
 
+
+

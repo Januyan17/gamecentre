@@ -155,3 +155,5 @@ Check your MIUI version: Settings → About phone → MIUI version
 
 **Remember: MIUI is designed to block background activity. You need to configure MULTIPLE hidden settings for it to work!**
 
+
+
