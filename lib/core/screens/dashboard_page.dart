@@ -11,6 +11,7 @@ import 'password_dialog.dart';
 import '../services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'miui_setup_dialog.dart';
+import 'package:intl/intl.dart';
 
 // Helper method to get service color
 Color _getServiceColor(String type) {
@@ -584,7 +585,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           final start = DateTime.fromMillisecondsSinceEpoch(
                             startTime.seconds * 1000,
                           );
-                          timeInfo = 'Started: ${start.toString().substring(11, 16)}';
+                          timeInfo = 'Started: ${DateFormat('hh:mm a').format(start)}';
                         }
 
                         return Card(

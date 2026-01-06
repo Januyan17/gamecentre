@@ -18,6 +18,23 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   final List<TextEditingController> _mobileControllers = [TextEditingController()];
   bool _isCreating = false;
   String? _selectedServiceType;
+
+  // Helper function to convert 24-hour time string to 12-hour format
+  String _formatTime12Hour(String time24Hour) {
+    try {
+      final parts = time24Hour.split(':');
+      if (parts.length >= 2) {
+        final hour = int.tryParse(parts[0]) ?? 0;
+        final minute = parts.length > 1 ? parts[1] : '00';
+        final period = hour >= 12 ? 'PM' : 'AM';
+        final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+        return '$hour12:${minute.padLeft(2, '0')} $period';
+      }
+    } catch (e) {
+      // If parsing fails, return original
+    }
+    return time24Hour;
+  }
   
   final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
 
@@ -103,15 +120,20 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
         // Check if current time falls within booked time range
         final currentDecimal = currentHour.toDouble();
         if (currentDecimal >= bookedStartDecimal && currentDecimal < bookedEndDecimal) {
-          // Format booked end time
+          // Format booked end time in 12-hour format
           final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
           final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
-          final bookedEndTime = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          final bookedEndTime24Hour = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          final bookedEndTime12Hour = _formatTime12Hour(bookedEndTime24Hour);
+          
+          // Format current time and booked time in 12-hour format
+          final currentTime12Hour = _formatTime12Hour('$currentTimeSlot:00');
+          final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
           
           throw Exception(
             'Cannot create session: This time slot is already booked for $selectedServiceType.\n\n'
-            'Current time: $currentTimeSlot\n'
-            'Existing booking: $bookedServiceType at $bookedTimeSlot - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+            'Current time: $currentTime12Hour\n'
+            'Existing booking: $bookedServiceType at $bookedTime12Hour - $bookedEndTime12Hour (${bookedDuration.toStringAsFixed(1)}h)\n\n'
             'Please wait until the booking ends or choose a different service type.\n'
             'Note: Different service types (e.g., PS5 and Theatre) can be booked at the same time.'
           );

@@ -136,11 +136,68 @@ class DailyResetService {
       // This ensures no day's finance data is lost even if admin forgets to save
       await _autoPreserveFinanceForDate(yesterdayId);
 
+      // Archive yesterday's bookings to history
+      await _archiveBookingsForDate(yesterdayId);
+
       // Don't initialize today's day document - let admin manage amounts manually
       // The day document will be created when sessions are closed or manually by admin
     } catch (e) {
       // Log error but don't crash the app
       print('Error in daily reset: $e');
+    }
+  }
+
+  /// Archive bookings for a specific date to history
+  /// This moves bookings from the active 'bookings' collection to 'booking_history'
+  /// while maintaining all customer information for historical records
+  Future<void> _archiveBookingsForDate(String dateId) async {
+    try {
+      // Get all bookings for yesterday's date
+      final bookingsSnapshot = await _firestore
+          .collection('bookings')
+          .where('date', isEqualTo: dateId)
+          .get();
+
+      if (bookingsSnapshot.docs.isEmpty) {
+        // No bookings to archive
+        return;
+      }
+
+      // Move bookings to history collection
+      final batch = _firestore.batch();
+      int archivedCount = 0;
+
+      for (var doc in bookingsSnapshot.docs) {
+        final bookingData = doc.data();
+        final bookingId = doc.id;
+
+        // Add archived timestamp and move to history
+        final historyData = <String, dynamic>{
+          ...bookingData,
+          'archivedAt': FieldValue.serverTimestamp(),
+          'archivedDate': dateId,
+          'originalBookingId': bookingId,
+        };
+
+        // Add to booking_history collection
+        batch.set(
+          _firestore.collection('booking_history').doc(bookingId),
+          historyData,
+        );
+
+        // Delete from active bookings collection
+        batch.delete(doc.reference);
+
+        archivedCount++;
+      }
+
+      // Commit all changes
+      await batch.commit();
+
+      print('Archived $archivedCount bookings for date $dateId to history');
+    } catch (e) {
+      print('Error archiving bookings for $dateId: $e');
+      // Don't throw - this is a background operation
     }
   }
 

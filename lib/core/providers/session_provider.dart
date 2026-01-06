@@ -11,6 +11,23 @@ class SessionProvider extends ChangeNotifier {
   double currentTotal = 0;
   List<Map<String, dynamic>> services = [];
 
+  // Helper function to convert 24-hour time string to 12-hour format
+  String _formatTime12Hour(String time24Hour) {
+    try {
+      final parts = time24Hour.split(':');
+      if (parts.length >= 2) {
+        final hour = int.tryParse(parts[0]) ?? 0;
+        final minute = parts.length > 1 ? parts[1] : '00';
+        final period = hour >= 12 ? 'PM' : 'AM';
+        final hour12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+        return '$hour12:${minute.padLeft(2, '0')} $period';
+      }
+    } catch (e) {
+      // If parsing fails, return original
+    }
+    return time24Hour;
+  }
+
   /// Reset provider state (called when daily reset happens)
   void resetState() {
     activeSessionId = null;
@@ -143,18 +160,22 @@ class SessionProvider extends ChangeNotifier {
         if ((serviceStartDecimal >= bookedStartDecimal && serviceStartDecimal < bookedEndDecimal) ||
             (serviceEndDecimal > bookedStartDecimal && serviceEndDecimal <= bookedEndDecimal) ||
             (serviceStartDecimal <= bookedStartDecimal && serviceEndDecimal >= bookedEndDecimal)) {
-          // Format booked end time
+          // Format booked end time in 12-hour format
           final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
           final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
-          final bookedEndTime = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          final bookedEndTime24Hour = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          final bookedEndTime = _formatTime12Hour(bookedEndTime24Hour);
           
-          // Format service time
-          final serviceTimeStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+          // Format service time in 12-hour format
+          final serviceTimeStr = DateFormat('hh:mm a').format(startTime);
+          
+          // Format booked time slot in 12-hour format
+          final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
           
           throw Exception(
             'This time slot conflicts with an existing booking.\n\n'
             'Your service time: $serviceTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
-            'Existing booking: $bookedTimeSlot - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+            'Existing booking: $bookedTime12Hour - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
             'Please choose a different time to avoid conflicts.'
           );
         }
