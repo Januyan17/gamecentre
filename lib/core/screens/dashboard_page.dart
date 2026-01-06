@@ -90,8 +90,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
         for (var service in services) {
           final serviceType = service['type'] as String? ?? '';
-          if (serviceType == 'VR') continue;
-
           final startTimeStr = service['startTime'] as String?;
           if (startTimeStr == null) continue;
 
@@ -107,7 +105,15 @@ class _DashboardPageState extends State<DashboardPage> {
             endTime = startTime.add(Duration(hours: hours));
           } else if (serviceType == 'Simulator') {
             final startTime = DateTime.parse(startTimeStr);
-            final duration = (service['duration'] as num?)?.toInt() ?? 30;
+            // Calculate duration based on games (5 minutes per game)
+            final games = (service['games'] as num?)?.toInt() ?? 1;
+            final duration = games * 5; // 5 minutes per game
+            endTime = startTime.add(Duration(minutes: duration));
+          } else if (serviceType == 'VR') {
+            final startTime = DateTime.parse(startTimeStr);
+            // Calculate duration based on games (5 minutes per game)
+            final games = (service['games'] as num?)?.toInt() ?? 1;
+            final duration = games * 5; // 5 minutes per game
             endTime = startTime.add(Duration(minutes: duration));
           }
 
@@ -466,17 +472,15 @@ class _DashboardPageState extends State<DashboardPage> {
                                     runSpacing: 4,
                                     crossAxisAlignment: WrapCrossAlignment.center,
                                     children: [
-                                      Flexible(
-                                        child: Text(
-                                          'Total: Rs ${totalAmount.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            decoration: TextDecoration.lineThrough,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                      Text(
+                                        'Total: Rs ${totalAmount.toStringAsFixed(2)}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          decoration: TextDecoration.lineThrough,
+                                          color: Colors.grey.shade600,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       Icon(
                                         Icons.discount,
@@ -624,6 +628,13 @@ class _DashboardPageState extends State<DashboardPage> {
                                         : int.tryParse(service['games'].toString()) ?? 0;
                                     subtitle =
                                         '$slots slot${slots != 1 ? 's' : ''} ($games games) - Rs ${price.toStringAsFixed(2)}';
+                                  } else if (service['games'] != null && service['type'] == 'Simulator') {
+                                    // Simulator with games
+                                    final games = service['games'] is int 
+                                        ? service['games'] as int 
+                                        : int.tryParse(service['games'].toString()) ?? 0;
+                                    subtitle =
+                                        '$games game${games != 1 ? 's' : ''} - Rs ${price.toStringAsFixed(2)}';
                                   } else if (service['duration'] != null) {
                                     subtitle =
                                         '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';

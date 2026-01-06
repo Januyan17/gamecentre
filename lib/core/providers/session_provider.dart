@@ -56,11 +56,8 @@ class SessionProvider extends ChangeNotifier {
       await _service.addService(activeSessionId!, service);
       await refreshSession();
       
-      // Schedule notification for time-up (only for PS4, PS5, Theatre, Simulator - not VR)
-      final serviceType = service['type'] as String? ?? '';
-      if (serviceType != 'VR') {
-        await _scheduleNotificationForService(service, activeSessionId!);
-      }
+      // Schedule notification for time-up (PS4, PS5, Theatre, Simulator, VR)
+      await _scheduleNotificationForService(service, activeSessionId!);
     } catch (e) {
       // Re-throw to let the caller handle it
       rethrow;
@@ -103,7 +100,18 @@ class SessionProvider extends ChangeNotifier {
         final startTimeStr = service['startTime'] as String?;
         if (startTimeStr != null) {
           final startTime = DateTime.parse(startTimeStr);
-          final duration = (service['duration'] as num?)?.toInt() ?? 30;
+          // Calculate duration based on games (5 minutes per game)
+          final games = (service['games'] as num?)?.toInt() ?? 1;
+          final duration = games * 5; // 5 minutes per game
+          endTime = startTime.add(Duration(minutes: duration));
+        }
+      } else if (serviceType == 'VR') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          // Calculate duration based on games (5 minutes per game)
+          final games = (service['games'] as num?)?.toInt() ?? 1;
+          final duration = games * 5; // 5 minutes per game
           endTime = startTime.add(Duration(minutes: duration));
         }
       }
@@ -156,11 +164,8 @@ class SessionProvider extends ChangeNotifier {
     await _service.updateService(activeSessionId!, index, updatedService);
     await refreshSession();
     
-    // Schedule new notification for updated service (only for PS4, PS5, Theatre, Simulator - not VR)
-    final serviceType = updatedService['type'] as String? ?? '';
-    if (serviceType != 'VR') {
-      await _scheduleNotificationForService(updatedService, activeSessionId!);
-    }
+    // Schedule new notification for updated service (PS4, PS5, Theatre, Simulator, VR)
+    await _scheduleNotificationForService(updatedService, activeSessionId!);
   }
 
   Future<void> deleteService(int index) async {

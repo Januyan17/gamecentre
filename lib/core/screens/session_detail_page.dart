@@ -357,9 +357,8 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                   discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
                   // finalAmount might be deleted when discount is removed, so default to total
                   final finalAmountValue = data?['finalAmount'];
-                  finalAmount = finalAmountValue != null 
-                      ? (finalAmountValue as num).toDouble() 
-                      : total;
+                  finalAmount =
+                      finalAmountValue != null ? (finalAmountValue as num).toDouble() : total;
                 }
 
                 return Column(
@@ -576,14 +575,25 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                                     '${hours}h ${minutes}m$controllerText - Rs ${price.toStringAsFixed(2)}';
                               } else if (service['slots'] != null && service['games'] != null) {
                                 // VR Game with slots
-                                final slots = service['slots'] is int 
-                                    ? service['slots'] as int 
-                                    : int.tryParse(service['slots'].toString()) ?? 0;
-                                final games = service['games'] is int 
-                                    ? service['games'] as int 
-                                    : int.tryParse(service['games'].toString()) ?? 0;
+                                final slots =
+                                    service['slots'] is int
+                                        ? service['slots'] as int
+                                        : int.tryParse(service['slots'].toString()) ?? 0;
+                                final games =
+                                    service['games'] is int
+                                        ? service['games'] as int
+                                        : int.tryParse(service['games'].toString()) ?? 0;
                                 subtitle =
                                     '$slots slot${slots != 1 ? 's' : ''} ($games games) - Rs ${price.toStringAsFixed(2)}';
+                              } else if (service['games'] != null &&
+                                  service['type'] == 'Simulator') {
+                                // Simulator with games
+                                final games =
+                                    service['games'] is int
+                                        ? service['games'] as int
+                                        : int.tryParse(service['games'].toString()) ?? 0;
+                                subtitle =
+                                    '$games game${games != 1 ? 's' : ''} - Rs ${price.toStringAsFixed(2)}';
                               } else if (service['duration'] != null) {
                                 subtitle =
                                     '${service['duration']} min - Rs ${price.toStringAsFixed(2)}';
@@ -694,9 +704,8 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                   discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
                   // finalAmount might be deleted when discount is removed, so default to totalAmount
                   final finalAmountValue = data?['finalAmount'];
-                  finalAmount = finalAmountValue != null 
-                      ? (finalAmountValue as num).toDouble() 
-                      : totalAmount;
+                  finalAmount =
+                      finalAmountValue != null ? (finalAmountValue as num).toDouble() : totalAmount;
                 }
 
                 final confirm = await showDialog<bool>(
@@ -781,6 +790,7 @@ class _EditDeviceDialogState extends State<_EditDeviceDialog> {
   late int minutes;
   late int additionalControllers;
   double price = 0;
+  double controllerPrice = 150.0; // Default, will be fetched from database
 
   @override
   void initState() {
@@ -798,7 +808,13 @@ class _EditDeviceDialogState extends State<_EditDeviceDialog> {
     } else {
       additionalControllers = 0;
     }
+    _fetchControllerPrice();
     _calculatePrice();
+  }
+
+  void _fetchControllerPrice() async {
+    controllerPrice = await PriceCalculator.getAdditionalControllerPrice();
+    setState(() {});
   }
 
   void _calculatePrice() async {
@@ -910,9 +926,9 @@ class _EditDeviceDialogState extends State<_EditDeviceDialog> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Rs 150 per controller',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  'Rs ${controllerPrice.toStringAsFixed(0)} per controller per hour',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -961,15 +977,15 @@ class _EditDeviceDialogState extends State<_EditDeviceDialog> {
             child: Column(
               children: [
                 Text('Total Time: ${hours}h ${minutes}m'),
-                if (additionalControllers > 0) ...[
+                if (additionalControllers > 0 && hours > 0) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Additional Controllers: $additionalControllers × Rs 150',
+                    'Additional Controllers: $additionalControllers × Rs ${controllerPrice.toStringAsFixed(0)} × ${hours}h',
                     style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Controller Charge: Rs ${(additionalControllers * 150).toStringAsFixed(2)}',
+                    'Controller Charge: Rs ${(additionalControllers * controllerPrice * hours).toStringAsFixed(2)}',
                     style: TextStyle(fontSize: 12, color: Colors.green.shade700),
                   ),
                 ],

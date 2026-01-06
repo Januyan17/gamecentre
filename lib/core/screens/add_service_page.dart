@@ -34,17 +34,9 @@ class AddServicePage extends StatelessWidget {
 
           const Divider(),
 
-          const Text('Car Simulator (30 min)', style: TextStyle(fontSize: 18)),
+          const Text('Car Simulator (per game)', style: TextStyle(fontSize: 18)),
           ElevatedButton(
-            onPressed: () async {
-              final price = await PriceCalculator.carSimulator();
-              _add(context, {
-                'type': 'Simulator',
-                'duration': 30,
-                'price': price,
-                'startTime': DateTime.now().toIso8601String(),
-              });
-            },
+            onPressed: () => _openSimulatorDialog(context),
             child: const Text('Add Simulator Session'),
           ),
 
@@ -69,6 +61,22 @@ class AddServicePage extends StatelessWidget {
             'type': 'VR',
             'slots': slots,
             'games': slots * 2, // 2 games per slot
+            'price': price,
+            'startTime': DateTime.now().toIso8601String(),
+          });
+        },
+      ),
+    );
+  }
+
+  void _openSimulatorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => _SimulatorDialog(
+        onAdd: (games, price) {
+          _add(context, {
+            'type': 'Simulator',
+            'games': games,
             'price': price,
             'startTime': DateTime.now().toIso8601String(),
           });
@@ -207,6 +215,121 @@ class _VrDialogState extends State<_VrDialog> {
             final slotPrice = await PriceCalculator.vr();
             final totalPrice = slotPrice * _slots;
             widget.onAdd(_slots, totalPrice);
+            Navigator.pop(context);
+          },
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SimulatorDialog extends StatefulWidget {
+  final Function(int games, double price) onAdd;
+
+  const _SimulatorDialog({required this.onAdd});
+
+  @override
+  State<_SimulatorDialog> createState() => _SimulatorDialogState();
+}
+
+class _SimulatorDialogState extends State<_SimulatorDialog> {
+  int _games = 1;
+  double _price = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _updatePrice();
+  }
+
+  Future<void> _updatePrice() async {
+    final gamePrice = await PriceCalculator.carSimulator();
+    final totalPrice = gamePrice * _games;
+    if (mounted) {
+      setState(() => _price = totalPrice);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Car Simulator'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Number of Games:',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: () {
+                  if (_games > 1) {
+                    setState(() {
+                      _games--;
+                      _updatePrice();
+                    });
+                  }
+                },
+              ),
+              Text(
+                '$_games',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () {
+                  setState(() {
+                    _games++;
+                    _updatePrice();
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total Price:',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Rs ${_price.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final gamePrice = await PriceCalculator.carSimulator();
+            final totalPrice = gamePrice * _games;
+            widget.onAdd(_games, totalPrice);
             Navigator.pop(context);
           },
           child: const Text('Add'),

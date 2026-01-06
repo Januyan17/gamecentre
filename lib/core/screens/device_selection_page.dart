@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,6 +15,20 @@ class DeviceSelectionPage extends StatefulWidget {
 
 class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
   final List<Map<String, dynamic>> selectedDevices = [];
+
+  // Helper method to get scenarios stream with error handling
+  Stream<QuerySnapshot> _getCommonScenariosStream() {
+    try {
+      return FirebaseFirestore.instance
+          .collection('common_scenarios')
+          .orderBy('order', descending: false)
+          .snapshots();
+    } catch (e) {
+      // If order index doesn't exist, return stream without orderBy
+      debugPrint('Order index not found, using stream without order: $e');
+      return FirebaseFirestore.instance.collection('common_scenarios').snapshots();
+    }
+  }
 
   void _addDevice(String type) {
     showDialog(
@@ -37,6 +52,44 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
             },
           ),
     );
+  }
+
+
+  void _quickAdd(String type, int count, int hours, int minutes, int additionalControllers) async {
+    // Calculate price for one device
+    double singlePrice = 0.0;
+    if (type == 'PS4') {
+      singlePrice = await PriceCalculator.ps4Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
+    } else if (type == 'PS5') {
+      singlePrice = await PriceCalculator.ps5Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
+    }
+
+    setState(() {
+      for (int i = 0; i < count; i++) {
+        selectedDevices.add({
+          'id': const Uuid().v4(),
+          'type': type,
+          'hours': hours,
+          'minutes': minutes,
+          'price': singlePrice,
+          'additionalControllers': additionalControllers,
+          'startTime': DateTime.now().toIso8601String(),
+        });
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
   }
 
   void _editDevice(int index) {
@@ -152,27 +205,190 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
       ),
       body: Column(
         children: [
+          // Quick Add Section - Common Scenarios from Admin
+          StreamBuilder<QuerySnapshot>(
+            stream: _getCommonScenariosStream(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  padding: const EdgeInsets.all(16.0),
+                  color: Colors.blue.shade50,
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (snapshot.hasError) {
+                debugPrint('Error loading common scenarios: ${snapshot.error}');
+                return const SizedBox.shrink();
+              }
+
+              List<Map<String, dynamic>> scenarios = [];
+              if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+                final docs = snapshot.data!.docs.toList();
+                // Sort manually if orderBy failed
+                try {
+                  docs.sort((a, b) {
+                    final orderA = (a.data() as Map<String, dynamic>)['order'] as int? ?? 0;
+                    final orderB = (b.data() as Map<String, dynamic>)['order'] as int? ?? 0;
+                    return orderA.compareTo(orderB);
+                  });
+                } catch (e) {
+                  debugPrint('Error sorting scenarios: $e');
+                }
+
+                scenarios = docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return {
+                    'id': doc.id,
+                    'type': data['type'] ?? 'PS5',
+                    'count': data['count'] ?? 1,
+                    'hours': data['hours'] ?? 1,
+                    'minutes': data['minutes'] ?? 0,
+                    'additionalControllers': data['additionalControllers'] ?? 0,
+                    'label': data['label'] ?? '',
+                  };
+                }).toList();
+              }
+
+              if (scenarios.isEmpty) {
+                return const SizedBox.shrink();
+              }
+
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.blue.shade200,
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.flash_on,
+                          size: 18,
+                          color: Colors.blue.shade700,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Quick Add',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: scenarios.map((scenario) {
+                        final type = scenario['type'] as String? ?? 'PS5';
+                        final count = (scenario['count'] as num?)?.toInt() ?? 1;
+                        final hours = (scenario['hours'] as num?)?.toInt() ?? 1;
+                        final minutes = (scenario['minutes'] as num?)?.toInt() ?? 0;
+                        final additionalControllers = (scenario['additionalControllers'] as num?)?.toInt() ?? 0;
+                        final label = scenario['label'] as String? ?? 
+                            '$count $type${hours > 0 ? ' ${hours}h' : ''}${additionalControllers > 0 ? ' Multi' : ''}';
+                        final color = type == 'PS5' ? Colors.blue : Colors.purple;
+                        
+                        return Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _quickAdd(type, count, hours, minutes, additionalControllers),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: color.withOpacity(0.3),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    additionalControllers > 0 ? Icons.people : Icons.sports_esports,
+                                    size: 16,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      label,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
+          const Divider(),
+
           // Device selection buttons
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Column(
               children: [
-                ElevatedButton.icon(
-                  onPressed: () => _addDevice('PS4'),
-                  icon: const Icon(Icons.sports_esports),
-                  label: const Text('Add PS4'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => _addDevice('PS5'),
-                  icon: const Icon(Icons.sports_esports),
-                  label: const Text('Add PS5'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _addDevice('PS4'),
+                        icon: const Icon(Icons.sports_esports),
+                        label: const Text('Add PS4'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          backgroundColor: Colors.purple,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _addDevice('PS5'),
+                        icon: const Icon(Icons.sports_esports),
+                        label: const Text('Add PS5'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -198,26 +414,78 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         final hours = device['hours'] as int;
                         final minutes = device['minutes'] as int;
                         final price = device['price'] as double;
-                        final multiplayer = device['multiplayer'] ?? false;
+                        final additionalControllers = device['additionalControllers'] as int? ?? 0;
+
+                        // Format time display
+                        String timeDisplay = '';
+                        if (hours > 0 && minutes > 0) {
+                          timeDisplay = '${hours}h ${minutes}m';
+                        } else if (hours > 0) {
+                          timeDisplay = '${hours}h';
+                        } else if (minutes > 0) {
+                          timeDisplay = '${minutes}m';
+                        }
 
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           child: ListTile(
-                            leading: CircleAvatar(child: Text(device['type'])),
-                            title: Text(
-                              '${device['type']}${multiplayer ? ' (Multiplayer)' : ''} - ${hours}h ${minutes}m',
+                            leading: CircleAvatar(
+                              backgroundColor: device['type'] == 'PS5' ? Colors.blue : Colors.purple,
+                              child: Text(
+                                device['type'],
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
                             ),
-                            subtitle: Text('Rs ${price.toStringAsFixed(2)}'),
+                            title: Text(
+                              '${device['type']} Console',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Duration: $timeDisplay',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                if (additionalControllers > 0) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Multiplayer: +$additionalControllers Controller${additionalControllers > 1 ? 's' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Price: Rs ${price.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                              ],
+                            ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
                                   icon: const Icon(Icons.edit),
                                   onPressed: () => _editDevice(index),
+                                  tooltip: 'Edit',
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete, color: Colors.red),
                                   onPressed: () => _removeDevice(index),
+                                  tooltip: 'Remove',
                                 ),
                               ],
                             ),
@@ -689,3 +957,4 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     );
   }
 }
+

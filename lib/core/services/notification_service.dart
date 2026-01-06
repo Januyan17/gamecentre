@@ -15,7 +15,10 @@ void alarmCallback(int id, Map<String, dynamic> params) {
 
 /// Check if session is still active and show notification only if active
 @pragma('vm:entry-point')
-Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) async {
+Future<void> _checkAndShowNotification(
+  int id,
+  Map<String, dynamic> params,
+) async {
   try {
     // Extract serviceId from params (we need to pass it when scheduling)
     final serviceId = params['serviceId'] as String?;
@@ -42,7 +45,9 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
           .get()
           .timeout(const Duration(seconds: 5));
     } catch (e) {
-      debugPrint('⚠️ Firestore query failed: $e. Will show notification anyway.');
+      debugPrint(
+        '⚠️ Firestore query failed: $e. Will show notification anyway.',
+      );
       checkFailed = true;
     }
 
@@ -50,26 +55,36 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
     if (checkFailed || sessionDoc == null) {
       final title = params['title'] as String? ?? 'Time Up';
       final body = params['body'] as String? ?? 'Service time completed';
-      debugPrint('⚠️ Firestore check failed, showing notification anyway: $title - $body');
+      debugPrint(
+        '⚠️ Firestore check failed, showing notification anyway: $title - $body',
+      );
       await _showNotificationFromCallback(id, title, body);
       return;
     }
 
     // Only show notification if session is still active
     if (!sessionDoc.exists) {
-      debugPrint('ℹ️ Session $sessionId is no longer active. Not showing notification.');
+      debugPrint(
+        'ℹ️ Session $sessionId is no longer active. Not showing notification.',
+      );
       return;
     }
 
     final sessionData = sessionDoc.data() as Map<String, dynamic>?;
     if (sessionData == null) {
-      debugPrint('ℹ️ Session $sessionId has no data. Not showing notification.');
+      debugPrint(
+        'ℹ️ Session $sessionId has no data. Not showing notification.',
+      );
       return;
     }
 
     // Check if the service still exists in the session
-    final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
-    final serviceExists = services.any((service) => (service['id'] as String? ?? '') == serviceId);
+    final services = List<Map<String, dynamic>>.from(
+      sessionData['services'] ?? [],
+    );
+    final serviceExists = services.any(
+      (service) => (service['id'] as String? ?? '') == serviceId,
+    );
 
     if (!serviceExists) {
       debugPrint(
@@ -90,7 +105,9 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
     try {
       final title = params['title'] as String? ?? 'Time Up';
       final body = params['body'] as String? ?? 'Service time completed';
-      debugPrint('⚠️ Showing notification despite error to ensure user is notified');
+      debugPrint(
+        '⚠️ Showing notification despite error to ensure user is notified',
+      );
       await _showNotificationFromCallback(id, title, body);
     } catch (e2) {
       debugPrint('❌ Failed to show notification even after error: $e2');
@@ -100,8 +117,13 @@ Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) asyn
 
 /// Show notification from callback - top-level function
 @pragma('vm:entry-point')
-Future<void> _showNotificationFromCallback(int id, String title, String body) async {
-  final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
+Future<void> _showNotificationFromCallback(
+  int id,
+  String title,
+  String body,
+) async {
+  final FlutterLocalNotificationsPlugin notifications =
+      FlutterLocalNotificationsPlugin();
 
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'service_time_up',
@@ -115,7 +137,9 @@ Future<void> _showNotificationFromCallback(int id, String title, String body) as
     visibility: NotificationVisibility.public,
   );
 
-  const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
+  const NotificationDetails notificationDetails = NotificationDetails(
+    android: androidDetails,
+  );
 
   try {
     await notifications.show(id, title, body, notificationDetails);
@@ -129,7 +153,8 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   static const platform = MethodChannel('com.company.rowzow/battery');
   static const alarmChannel = MethodChannel('com.company.rowzow/alarm');
@@ -146,15 +171,15 @@ class NotificationService {
     await AndroidAlarmManager.initialize();
 
     // Android initialization settings
-    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    const DarwinInitializationSettings iosSettings =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
 
     const InitializationSettings initSettings = InitializationSettings(
       android: androidSettings,
@@ -170,7 +195,9 @@ class NotificationService {
     if (defaultTargetPlatform == TargetPlatform.android) {
       final androidImplementation =
           _notifications
-              .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >();
 
       if (androidImplementation != null) {
         await androidImplementation.requestNotificationsPermission();
@@ -186,7 +213,8 @@ class NotificationService {
             const AndroidNotificationChannel(
               'service_time_up',
               'Service Time Up',
-              description: 'Notifications when service time slots are completed with sound',
+              description:
+                  'Notifications when service time slots are completed with sound',
               importance: Importance.max,
               playSound: true,
               enableVibration: true,
@@ -244,9 +272,7 @@ class NotificationService {
       await initialize();
     }
 
-    if (serviceType == 'VR') {
-      return;
-    }
+    // VR notifications are now enabled (based on games)
 
     if (endTime.isBefore(DateTime.now())) {
       debugPrint('Cannot schedule notification in the past: $endTime');
@@ -293,22 +319,29 @@ class NotificationService {
   }
 
   /// Show an immediate notification (for testing)
-  Future<void> showImmediateNotification({required String title, required String body}) async {
+  Future<void> showImmediateNotification({
+    required String title,
+    required String body,
+  }) async {
     if (!_initialized) {
       await initialize();
     }
 
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'service_time_up',
-      'Service Time Up',
-      channelDescription: 'Notifications when service time slots are completed',
-      importance: Importance.max,
-      priority: Priority.max,
-      playSound: true,
-      enableVibration: true,
-    );
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'service_time_up',
+          'Service Time Up',
+          channelDescription:
+              'Notifications when service time slots are completed',
+          importance: Importance.max,
+          priority: Priority.max,
+          playSound: true,
+          enableVibration: true,
+        );
 
-    const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
 
     try {
       await _notifications.show(
