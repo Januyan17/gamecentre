@@ -74,11 +74,38 @@ class SessionProvider extends ChangeNotifier {
       // Check for booking conflicts before adding service
       await _checkBookingConflict(service);
       
+      // Store the startTime to find the service after refresh
+      final startTimeStr = service['startTime'] as String?;
+      final serviceType = service['type'] as String? ?? '';
+      
       await _service.addService(activeSessionId!, service);
       await refreshSession();
       
+      // After refresh, find the service that was just added from Firestore
+      // This ensures we use the correct service ID that was actually saved
+      Map<String, dynamic>? savedService;
+      if (startTimeStr != null && services.isNotEmpty) {
+        try {
+          savedService = services.firstWhere(
+            (s) {
+              final sType = s['type'] as String?;
+              final sStartTime = s['startTime'] as String?;
+              return sType == serviceType && sStartTime == startTimeStr;
+            },
+            orElse: () => service, // Fallback to original if not found
+          );
+          debugPrint('✅ Found saved service in Firestore for notification scheduling');
+        } catch (e) {
+          debugPrint('⚠️ Could not find saved service, using original: $e');
+          savedService = service; // Fallback to original service
+        }
+      } else {
+        savedService = service; // Fallback to original service
+      }
+      
       // Schedule notification for time-up (PS4, PS5, Theatre, Simulator, VR)
-      await _scheduleNotificationForService(service, activeSessionId!);
+      // Use the service from Firestore to ensure correct ID
+      await _scheduleNotificationForService(savedService, activeSessionId!);
     } catch (e) {
       // Re-throw to let the caller handle it
       rethrow;
@@ -203,43 +230,54 @@ class SessionProvider extends ChangeNotifier {
 
       final serviceType = service['type'] as String? ?? '';
       
-      // Get service ID - first try from the service object
-      String? serviceId = service['id'] as String?;
+      // Get service ID - ALWAYS try to get it from Firestore first to ensure it matches
+      // This is critical because the service object passed in might have a different ID
+      String? serviceId;
+      final services = List<Map<String, dynamic>>.from(sessionData?['services'] ?? []);
+      final startTimeStr = service['startTime'] as String?;
       
-      // If service doesn't have an ID, try to find it in the saved services by matching type and startTime
-      // This ensures we use the ID that was actually saved to Firestore
-      if (serviceId == null || serviceId.isEmpty) {
-        final services = List<Map<String, dynamic>>.from(sessionData?['services'] ?? []);
-        final startTimeStr = service['startTime'] as String?;
-        if (startTimeStr != null && services.isNotEmpty) {
-          // Find the service in Firestore that matches this service
-          // Match by type, startTime, and price to be more accurate
-          try {
-            final matchingService = services.firstWhere(
-              (s) {
-                final sType = s['type'] as String?;
-                final sStartTime = s['startTime'] as String?;
-                return sType == serviceType && sStartTime == startTimeStr;
-              },
-            );
-            serviceId = matchingService['id'] as String?;
-            debugPrint('📋 Found service ID from Firestore: $serviceId');
-          } catch (e) {
-            debugPrint('⚠️ Could not find matching service in Firestore: $e');
+      if (startTimeStr != null && services.isNotEmpty) {
+        // Find the service in Firestore that matches this service
+        // Match by type and startTime to get the correct ID from Firestore
+        try {
+          final matchingService = services.firstWhere(
+            (s) {
+              final sType = s['type'] as String?;
+              final sStartTime = s['startTime'] as String?;
+              return sType == serviceType && sStartTime == startTimeStr;
+            },
+          );
+          serviceId = matchingService['id'] as String?;
+          if (serviceId != null && serviceId.isNotEmpty) {
+            debugPrint('✅ Found service ID from Firestore: $serviceId');
           }
+        } catch (e) {
+          debugPrint('⚠️ Could not find matching service in Firestore: $e');
+          debugPrint('   Looking for: type=$serviceType, startTime=$startTimeStr');
+          debugPrint('   Available services: ${services.map((s) => '${s['type']}@${s['startTime']}').join(', ')}');
         }
       }
       
-      // If still no ID, generate one (but this should rarely happen)
+      // Fallback: try to get ID from service object
+      if (serviceId == null || serviceId.isEmpty) {
+        serviceId = service['id'] as String?;
+        if (serviceId != null && serviceId.isNotEmpty) {
+          debugPrint('📋 Using service ID from service object: $serviceId');
+        }
+      }
+      
+      // Last resort: generate one (but this should rarely happen and might cause issues)
       if (serviceId == null || serviceId.isEmpty) {
         serviceId = '${sessionId}_${DateTime.now().millisecondsSinceEpoch}';
-        debugPrint('⚠️ Generated fallback service ID: $serviceId');
+        debugPrint('⚠️ Generated fallback service ID: $serviceId (WARNING: May not match Firestore)');
       }
       
       debugPrint('📋 Scheduling notification for service:');
       debugPrint('   Service Type: $serviceType');
       debugPrint('   Service ID: $serviceId');
+      debugPrint('   Session ID: $sessionId');
       debugPrint('   Service has ID in object: ${service['id'] != null}');
+      debugPrint('   Services in Firestore: ${services.length}');
 
       DateTime? endTime;
 

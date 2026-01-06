@@ -356,8 +356,23 @@ class NotificationService {
     final notificationId = serviceId.hashCode.abs();
     final delay = endTime.difference(DateTime.now());
 
+    debugPrint('📅 Scheduling notification:');
+    debugPrint('   Notification ID: $notificationId');
+    debugPrint(
+      '   Delay: ${delay.inMinutes} minutes (${delay.inSeconds} seconds)',
+    );
+    debugPrint('   End Time: $endTime');
+    debugPrint('   Current Time: ${DateTime.now()}');
+
+    if (delay.isNegative) {
+      debugPrint(
+        '⚠️ Cannot schedule notification: delay is negative (end time is in the past)',
+      );
+      return;
+    }
+
     try {
-      await AndroidAlarmManager.oneShot(
+      final scheduled = await AndroidAlarmManager.oneShot(
         delay,
         notificationId,
         alarmCallback,
@@ -372,8 +387,17 @@ class NotificationService {
           'body': '$serviceType session for $customerName has completed',
         },
       );
-    } catch (e) {
-      debugPrint('Error scheduling alarm: $e');
+
+      if (scheduled) {
+        debugPrint('✅ Notification scheduled successfully for $serviceType');
+      } else {
+        debugPrint(
+          '❌ Failed to schedule notification (AndroidAlarmManager returned false)',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error scheduling alarm: $e');
+      debugPrint('Stack trace: $stackTrace');
     }
   }
 

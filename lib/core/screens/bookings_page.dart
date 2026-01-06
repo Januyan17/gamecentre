@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1351,23 +1352,67 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
     try {
       // Delete from appropriate collection
+      // Try the specified collection first, then fallback to the other if not found
+      bool deleted = false;
+      
       if (isHistory) {
-        await _firestore.collection('booking_history').doc(bookingId).delete();
+        try {
+          // Check if document exists in booking_history
+          final doc = await _firestore.collection('booking_history').doc(bookingId).get();
+          if (doc.exists) {
+            await _firestore.collection('booking_history').doc(bookingId).delete();
+            deleted = true;
+          } else {
+            // Try bookings collection as fallback
+            final bookingsDoc = await _firestore.collection('bookings').doc(bookingId).get();
+            if (bookingsDoc.exists) {
+              await _firestore.collection('bookings').doc(bookingId).delete();
+              deleted = true;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error deleting from booking_history: $e');
+        }
       } else {
-        await _firestore.collection('bookings').doc(bookingId).delete();
+        try {
+          // Check if document exists in bookings
+          final doc = await _firestore.collection('bookings').doc(bookingId).get();
+          if (doc.exists) {
+            await _firestore.collection('bookings').doc(bookingId).delete();
+            deleted = true;
+          } else {
+            // Try booking_history collection as fallback
+            final historyDoc = await _firestore.collection('booking_history').doc(bookingId).get();
+            if (historyDoc.exists) {
+              await _firestore.collection('booking_history').doc(bookingId).delete();
+              deleted = true;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error deleting from bookings: $e');
+        }
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isHistory
-                  ? 'Booking deleted from history successfully.'
-                  : 'Booking deleted successfully. Time slot is now available.',
+        if (deleted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isHistory
+                    ? 'Booking deleted from history successfully.'
+                    : 'Booking deleted successfully. Time slot is now available.',
+              ),
+              backgroundColor: Colors.green,
             ),
-            backgroundColor: Colors.green,
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Booking not found. It may have already been deleted.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1931,20 +1976,32 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                 future: _firestore.collection('booking_history').limit(100).get(),
                 builder: (context, archiveSnapshot) {
                   // Combine done bookings and archived bookings
-                  List<QueryDocumentSnapshot> allBookings = [];
+                  // Track which collection each booking came from
+                  List<Map<String, dynamic>> allBookings = [];
 
                   if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                    allBookings.addAll(snapshot.data!.docs);
+                    for (var doc in snapshot.data!.docs) {
+                      allBookings.add({
+                        'doc': doc,
+                        'isHistory': false, // From 'bookings' collection
+                      });
+                    }
                   }
 
                   if (archiveSnapshot.hasData && archiveSnapshot.data!.docs.isNotEmpty) {
-                    allBookings.addAll(archiveSnapshot.data!.docs);
+                    for (var doc in archiveSnapshot.data!.docs) {
+                      allBookings.add({
+                        'doc': doc,
+                        'isHistory': true, // From 'booking_history' collection
+                      });
+                    }
                   }
 
                   // Apply date filter
                   final filterDateId = DateFormat('yyyy-MM-dd').format(_historyFilterDate);
                   allBookings =
-                      allBookings.where((doc) {
+                      allBookings.where((item) {
+                        final doc = item['doc'] as QueryDocumentSnapshot;
                         final data = doc.data() as Map<String, dynamic>;
                         final bookingDate = data['date'] as String? ?? '';
                         return bookingDate == filterDateId;
@@ -1967,10 +2024,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   }
 
                   // Sort by date (archived date or booking date)
-                  final sortedDocs = allBookings;
-                  sortedDocs.sort((a, b) {
-                    final dataA = a.data() as Map<String, dynamic>;
-                    final dataB = b.data() as Map<String, dynamic>;
+                  allBookings.sort((a, b) {
+                    final docA = a['doc'] as QueryDocumentSnapshot;
+                    final docB = b['doc'] as QueryDocumentSnapshot;
+                    final dataA = docA.data() as Map<String, dynamic>;
+                    final dataB = docB.data() as Map<String, dynamic>;
 
                     // Try archivedAt first, then dateTimestamp, then completedAt
                     DateTime dateA =
@@ -1989,9 +2047,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
                   return ListView.builder(
                     padding: const EdgeInsets.all(12),
-                    itemCount: sortedDocs.length,
+                    itemCount: allBookings.length,
                     itemBuilder: (context, index) {
-                      final doc = sortedDocs[index];
+                      final item = allBookings[index];
+                      final doc = item['doc'] as QueryDocumentSnapshot;
+                      final isHistory = item['isHistory'] as bool;
                       final data = doc.data() as Map<String, dynamic>;
                       final serviceType = data['serviceType'] ?? 'Unknown';
                       final timeSlot24Hour = data['timeSlot'] ?? '';
@@ -2126,7 +2186,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     color: Colors.red.shade700,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(),
-                                    onPressed: () => _deleteBooking(doc.id, isHistory: true),
+                                    onPressed: () => _deleteBooking(doc.id, isHistory: isHistory),
                                     tooltip: 'Delete from History',
                                   ),
                                 ],
