@@ -202,7 +202,44 @@ class SessionProvider extends ChangeNotifier {
       final customerName = sessionData?['customerName'] as String? ?? 'Customer';
 
       final serviceType = service['type'] as String? ?? '';
-      final serviceId = service['id'] as String? ?? '${sessionId}_${DateTime.now().millisecondsSinceEpoch}';
+      
+      // Get service ID - first try from the service object
+      String? serviceId = service['id'] as String?;
+      
+      // If service doesn't have an ID, try to find it in the saved services by matching type and startTime
+      // This ensures we use the ID that was actually saved to Firestore
+      if (serviceId == null || serviceId.isEmpty) {
+        final services = List<Map<String, dynamic>>.from(sessionData?['services'] ?? []);
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null && services.isNotEmpty) {
+          // Find the service in Firestore that matches this service
+          // Match by type, startTime, and price to be more accurate
+          try {
+            final matchingService = services.firstWhere(
+              (s) {
+                final sType = s['type'] as String?;
+                final sStartTime = s['startTime'] as String?;
+                return sType == serviceType && sStartTime == startTimeStr;
+              },
+            );
+            serviceId = matchingService['id'] as String?;
+            debugPrint('📋 Found service ID from Firestore: $serviceId');
+          } catch (e) {
+            debugPrint('⚠️ Could not find matching service in Firestore: $e');
+          }
+        }
+      }
+      
+      // If still no ID, generate one (but this should rarely happen)
+      if (serviceId == null || serviceId.isEmpty) {
+        serviceId = '${sessionId}_${DateTime.now().millisecondsSinceEpoch}';
+        debugPrint('⚠️ Generated fallback service ID: $serviceId');
+      }
+      
+      debugPrint('📋 Scheduling notification for service:');
+      debugPrint('   Service Type: $serviceType');
+      debugPrint('   Service ID: $serviceId');
+      debugPrint('   Service has ID in object: ${service['id'] != null}');
 
       DateTime? endTime;
 

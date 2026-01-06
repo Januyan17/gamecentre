@@ -14,7 +14,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _selectedServiceType;
   DateTime _selectedDate = DateTime.now();
-  DateTime _historyFilterDate = DateTime.now(); // Date filter for history tab (initially current date)
+  DateTime _historyFilterDate =
+      DateTime.now(); // Date filter for history tab (initially current date)
   String? _selectedTimeSlot;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -97,13 +98,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
   Stream<QuerySnapshot> _getBookingsStream(String dateId) {
     final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final isPastDate = dateId.compareTo(todayId) < 0;
-    
+
     if (isPastDate) {
       // For past dates, check booking history
-      return _firestore
-          .collection('booking_history')
-          .where('date', isEqualTo: dateId)
-          .snapshots();
+      return _firestore.collection('booking_history').where('date', isEqualTo: dateId).snapshots();
     } else {
       // For today and future dates, check active bookings (exclude "done" status)
       return _firestore
@@ -124,21 +122,23 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       final dateId = DateFormat('yyyy-MM-dd').format(date);
       final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final isPastDate = dateId.compareTo(todayId) < 0;
-      
+
       // For past dates, check history; for today/future, check active bookings
       QuerySnapshot bookingsSnapshot;
       if (isPastDate) {
-        bookingsSnapshot = await _firestore
-            .collection('booking_history')
-            .where('date', isEqualTo: dateId)
-            .where('serviceType', isEqualTo: serviceType)
-            .get();
+        bookingsSnapshot =
+            await _firestore
+                .collection('booking_history')
+                .where('date', isEqualTo: dateId)
+                .where('serviceType', isEqualTo: serviceType)
+                .get();
       } else {
-        bookingsSnapshot = await _firestore
-            .collection('bookings')
-            .where('date', isEqualTo: dateId)
-            .where('serviceType', isEqualTo: serviceType)
-            .get();
+        bookingsSnapshot =
+            await _firestore
+                .collection('bookings')
+                .where('date', isEqualTo: dateId)
+                .where('serviceType', isEqualTo: serviceType)
+                .get();
       }
 
       // Show availability dialog
@@ -167,16 +167,16 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         final timeSlot = data['timeSlot'] as String? ?? '';
         final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
         final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-        
+
         // Skip if no time slot
         if (timeSlot.isEmpty) continue;
-        
+
         // IMPORTANT: Block time slots for 'pending', 'confirmed', and 'done' bookings
         // Only 'cancelled' bookings should NOT block (time slots become available/green)
         if (status == 'cancelled') {
           continue; // Skip - don't add to bookedSlots, so it shows as available (green)
         }
-        
+
         // Parse time slot (e.g., "14:00") and convert to 12-hour format for display
         final parts = timeSlot.split(':');
         if (parts.length == 2) {
@@ -207,166 +207,172 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       context: context,
       builder:
           (context) => StatefulBuilder(
-            builder:
-                (context, setDialogState) {
-                  // Function to reload availability for a new date
-                  Future<void> reloadAvailability(DateTime selectedDate) async {
-                    try {
-                      final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
-                      final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                      final isPastDate = dateId.compareTo(todayId) < 0;
-                      
-                      // For past dates, check history; for today/future, check active bookings
-                      QuerySnapshot bookingsSnapshot;
-                      if (isPastDate) {
-                        bookingsSnapshot = await _firestore
+            builder: (context, setDialogState) {
+              // Function to reload availability for a new date
+              Future<void> reloadAvailability(DateTime selectedDate) async {
+                try {
+                  final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
+                  final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  final isPastDate = dateId.compareTo(todayId) < 0;
+
+                  // For past dates, check history; for today/future, check active bookings
+                  QuerySnapshot bookingsSnapshot;
+                  if (isPastDate) {
+                    bookingsSnapshot =
+                        await _firestore
                             .collection('booking_history')
                             .where('date', isEqualTo: dateId)
                             .where('serviceType', isEqualTo: serviceType)
                             .get();
-                      } else {
-                        bookingsSnapshot = await _firestore
+                  } else {
+                    bookingsSnapshot =
+                        await _firestore
                             .collection('bookings')
                             .where('date', isEqualTo: dateId)
                             .where('serviceType', isEqualTo: serviceType)
                             .get();
-                      }
-                      
-                      // Calculate new booked slots
-                      final newBookedSlots = calculateBookedSlots(bookingsSnapshot.docs);
-                      
-                      setDialogState(() {
-                        dialogBookedSlots.clear();
-                        dialogBookedSlots.addAll(newBookedSlots);
-                        dialogSelectedDate = selectedDate;
-                      });
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error loading availability: $e')),
-                        );
-                      }
-                    }
                   }
 
-                  return AlertDialog(
-                    title: Text('$serviceType Availability - ${DateFormat('MMM dd, yyyy').format(dialogSelectedDate)}'),
-                    content: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.9,
-                        maxHeight: MediaQuery.of(context).size.height * 0.6,
-                      ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Date Picker
-                            Text(
-                              'Select Date:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            const SizedBox(height: 8),
-                            InkWell(
-                              onTap: () async {
-                                final now = DateTime.now();
-                                final maxDate = now.add(const Duration(days: 30));
-                                
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: dialogSelectedDate,
-                                  firstDate: now,
-                                  lastDate: maxDate,
-                                  selectableDayPredicate: (date) {
-                                    return date.isAfter(now.subtract(const Duration(days: 1))) &&
-                                        date.isBefore(maxDate.add(const Duration(days: 1)));
-                                  },
-                                );
-                                
-                                if (picked != null && picked != dialogSelectedDate) {
-                                  await reloadAvailability(picked);
-                                }
+                  // Calculate new booked slots
+                  final newBookedSlots = calculateBookedSlots(bookingsSnapshot.docs);
+
+                  setDialogState(() {
+                    dialogBookedSlots.clear();
+                    dialogBookedSlots.addAll(newBookedSlots);
+                    dialogSelectedDate = selectedDate;
+                  });
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('Error loading availability: $e')));
+                  }
+                }
+              }
+
+              return AlertDialog(
+                title: Text(
+                  '$serviceType Availability - ${DateFormat('MMM dd, yyyy').format(dialogSelectedDate)}',
+                ),
+                content: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.9,
+                    maxHeight: MediaQuery.of(context).size.height * 0.6,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Date Picker
+                        Text(
+                          'Select Date:',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: () async {
+                            final now = DateTime.now();
+                            final maxDate = now.add(const Duration(days: 30));
+
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: dialogSelectedDate,
+                              firstDate: now,
+                              lastDate: maxDate,
+                              selectableDayPredicate: (date) {
+                                return date.isAfter(now.subtract(const Duration(days: 1))) &&
+                                    date.isBefore(maxDate.add(const Duration(days: 1)));
                               },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.purple.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.purple.shade300),
+                            );
+
+                            if (picked != null && picked != dialogSelectedDate) {
+                              await reloadAvailability(picked);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.purple.shade300),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_today, color: Colors.purple.shade700),
+                                const SizedBox(width: 8),
+                                Text(
+                                  DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.purple.shade700,
+                                  ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.calendar_today, color: Colors.purple.shade700),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.purple.shade700,
-                                      ),
+                                const Spacer(),
+                                Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Available Time Slots:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.purple.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children:
+                              _timeSlots.map((slot) {
+                                final isBooked = dialogBookedSlots.contains(slot);
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isBooked ? Colors.red.shade50 : Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isBooked ? Colors.red.shade300 : Colors.green.shade300,
                                     ),
-                                    const Spacer(),
-                                    Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              'Available Time Slots:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Colors.purple.shade700,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children:
-                                  _timeSlots.map((slot) {
-                                    final isBooked = dialogBookedSlots.contains(slot);
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: isBooked ? Colors.red.shade50 : Colors.green.shade50,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: isBooked ? Colors.red.shade300 : Colors.green.shade300,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isBooked ? Icons.close : Icons.check,
+                                        size: 14,
+                                        color: isBooked ? Colors.red : Colors.green,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        slot,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color:
+                                              isBooked
+                                                  ? Colors.red.shade700
+                                                  : Colors.green.shade700,
                                         ),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            isBooked ? Icons.close : Icons.check,
-                                            size: 14,
-                                            color: isBooked ? Colors.red : Colors.green,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            slot,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                              color: isBooked ? Colors.red.shade700 : Colors.green.shade700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                            ),
-                          ],
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                         ),
-                      ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-                    ],
-                  );
-                },
+                  ),
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                ],
+              );
+            },
           ),
     );
   }
@@ -387,23 +393,25 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     final dateId = DateFormat('yyyy-MM-dd').format(date);
     final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final isPastDate = dateId.compareTo(todayId) < 0;
-    
+
     // For past dates, check history; for today/future, check active bookings
     QuerySnapshot existingBookings;
     if (isPastDate) {
       // Check booking history for past dates
-      existingBookings = await _firestore
-          .collection('booking_history')
-          .where('date', isEqualTo: dateId)
-          .where('serviceType', isEqualTo: serviceType)
-          .get();
+      existingBookings =
+          await _firestore
+              .collection('booking_history')
+              .where('date', isEqualTo: dateId)
+              .where('serviceType', isEqualTo: serviceType)
+              .get();
     } else {
       // Check active bookings for today and future dates
-      existingBookings = await _firestore
-          .collection('bookings')
-          .where('date', isEqualTo: dateId)
-          .where('serviceType', isEqualTo: serviceType)
-          .get();
+      existingBookings =
+          await _firestore
+              .collection('bookings')
+              .where('date', isEqualTo: dateId)
+              .where('serviceType', isEqualTo: serviceType)
+              .get();
     }
 
     // Calculate booked slots considering duration
@@ -411,14 +419,14 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     for (var doc in existingBookings.docs) {
       final data = doc.data() as Map<String, dynamic>?;
       if (data == null) continue;
-      
+
       final timeSlot = data['timeSlot'] as String? ?? '';
       final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
       final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-      
+
       // Skip if no time slot
       if (timeSlot.isEmpty) continue;
-      
+
       // IMPORTANT: Block time slots for 'pending', 'confirmed', and 'done' bookings
       // Only 'cancelled' bookings should NOT block (time slots become available/green)
       // Once a booking is made, it blocks the slot regardless of pending/done status
@@ -426,7 +434,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         continue; // Skip - don't add to bookedSlots, so it shows as available (green)
       }
       // 'pending', 'confirmed', and 'done' bookings will block the time slot (red)
-      
+
       final parts = timeSlot.split(':');
       if (parts.length == 2) {
         final startHour = int.tryParse(parts[0]) ?? 0;
@@ -455,211 +463,221 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       context: context,
       builder:
           (context) => StatefulBuilder(
-              builder:
-                  (context, setDialogState) {
-                    // Function to reload booked slots when date changes
-                    Future<void> reloadBookedSlots(DateTime selectedDate) async {
-                      final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
-                      final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                      final isPastDate = dateId.compareTo(todayId) < 0;
-                      
-                      QuerySnapshot existingBookings;
-                      if (isPastDate) {
-                        existingBookings = await _firestore
-                            .collection('booking_history')
-                            .where('date', isEqualTo: dateId)
-                            .where('serviceType', isEqualTo: serviceType)
-                            .get();
-                      } else {
-                        existingBookings = await _firestore
-                            .collection('bookings')
-                            .where('date', isEqualTo: dateId)
-                            .where('serviceType', isEqualTo: serviceType)
-                            .get();
-                      }
+            builder: (context, setDialogState) {
+              // Function to reload booked slots when date changes
+              Future<void> reloadBookedSlots(DateTime selectedDate) async {
+                final dateId = DateFormat('yyyy-MM-dd').format(selectedDate);
+                final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                final isPastDate = dateId.compareTo(todayId) < 0;
 
-                      final Set<String> newBookedSlots = {};
-                      for (var doc in existingBookings.docs) {
-                        final data = doc.data() as Map<String, dynamic>?;
-                        if (data == null) continue;
-                        
-                        final timeSlot = data['timeSlot'] as String? ?? '';
-                        final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-                        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-                        
-                        if (timeSlot.isEmpty) continue;
-                        if (status == 'cancelled') continue;
-                        
-                        final parts = timeSlot.split(':');
-                        if (parts.length == 2) {
-                          final startHour = int.tryParse(parts[0]) ?? 0;
-                          final durationHoursRounded = durationHours.ceil();
-                          for (int i = 0; i < durationHoursRounded; i++) {
-                            final hour = startHour + i;
-                            if (hour <= 23) {
-                              final slot24Hour = '${hour.toString().padLeft(2, '0')}:00';
-                              // Convert to 12-hour format for comparison with displayed slots
-                              final slot12Hour = _formatTime12Hour(slot24Hour);
-                              newBookedSlots.add(slot12Hour);
-                            }
-                          }
-                        }
+                QuerySnapshot existingBookings;
+                if (isPastDate) {
+                  existingBookings =
+                      await _firestore
+                          .collection('booking_history')
+                          .where('date', isEqualTo: dateId)
+                          .where('serviceType', isEqualTo: serviceType)
+                          .get();
+                } else {
+                  existingBookings =
+                      await _firestore
+                          .collection('bookings')
+                          .where('date', isEqualTo: dateId)
+                          .where('serviceType', isEqualTo: serviceType)
+                          .get();
+                }
+
+                final Set<String> newBookedSlots = {};
+                for (var doc in existingBookings.docs) {
+                  final data = doc.data() as Map<String, dynamic>?;
+                  if (data == null) continue;
+
+                  final timeSlot = data['timeSlot'] as String? ?? '';
+                  final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+                  final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+
+                  if (timeSlot.isEmpty) continue;
+                  if (status == 'cancelled') continue;
+
+                  final parts = timeSlot.split(':');
+                  if (parts.length == 2) {
+                    final startHour = int.tryParse(parts[0]) ?? 0;
+                    final durationHoursRounded = durationHours.ceil();
+                    for (int i = 0; i < durationHoursRounded; i++) {
+                      final hour = startHour + i;
+                      if (hour <= 23) {
+                        final slot24Hour = '${hour.toString().padLeft(2, '0')}:00';
+                        // Convert to 12-hour format for comparison with displayed slots
+                        final slot12Hour = _formatTime12Hour(slot24Hour);
+                        newBookedSlots.add(slot12Hour);
                       }
-                      
-                      setDialogState(() {
-                        // Update the persisted set
-                        dialogBookedSlots.clear();
-                        dialogBookedSlots.addAll(newBookedSlots);
-                        dialogSelectedDate = selectedDate;
-                        _selectedTimeSlot = null; // Clear selection when date changes
-                      });
                     }
+                  }
+                }
 
-                  // Form key for validation
-                  final formKey = GlobalKey<FormState>();
+                setDialogState(() {
+                  // Update the persisted set
+                  dialogBookedSlots.clear();
+                  dialogBookedSlots.addAll(newBookedSlots);
+                  dialogSelectedDate = selectedDate;
+                  _selectedTimeSlot = null; // Clear selection when date changes
+                });
+              }
 
-                  return Dialog(
-                    insetPadding: const EdgeInsets.all(16),
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Form(
-                          key: formKey,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                            Text(
-                              'Book $serviceType',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade700,
+              // Form key for validation
+              final formKey = GlobalKey<FormState>();
+
+              return Dialog(
+                insetPadding: const EdgeInsets.all(16),
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Book $serviceType',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple.shade700,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Date Picker
+                          Text(
+                            'Select Date:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: () async {
+                              final now = DateTime.now();
+                              final maxDate = now.add(const Duration(days: 30));
+
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: dialogSelectedDate,
+                                firstDate: now,
+                                lastDate: maxDate,
+                                selectableDayPredicate: (date) {
+                                  return date.isAfter(now.subtract(const Duration(days: 1))) &&
+                                      date.isBefore(maxDate.add(const Duration(days: 1)));
+                                },
+                              );
+
+                              if (picked != null && picked != dialogSelectedDate) {
+                                // Update global selected date
+                                _selectedDate = picked;
+                                // Reload booked slots for the new date (this will update dialogSelectedDate and clear selection)
+                                await reloadBookedSlots(picked);
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.purple.shade300),
                               ),
-                            ),
-                            const SizedBox(height: 20),
-                            // Date Picker
-                            Text(
-                              'Select Date:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            const SizedBox(height: 8),
-                            InkWell(
-                              onTap: () async {
-                                final now = DateTime.now();
-                                final maxDate = now.add(const Duration(days: 30));
-                                
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate: dialogSelectedDate,
-                                  firstDate: now,
-                                  lastDate: maxDate,
-                                  selectableDayPredicate: (date) {
-                                    return date.isAfter(now.subtract(const Duration(days: 1))) &&
-                                        date.isBefore(maxDate.add(const Duration(days: 1)));
-                                  },
-                                );
-                                
-                                if (picked != null && picked != dialogSelectedDate) {
-                                  // Update global selected date
-                                  _selectedDate = picked;
-                                  // Reload booked slots for the new date (this will update dialogSelectedDate and clear selection)
-                                  await reloadBookedSlots(picked);
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.purple.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.purple.shade300),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.calendar_today, color: Colors.purple.shade700),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.purple.shade700,
-                                      ),
-                                    ),
-                                    const Spacer(),
-                                    Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            // Time Slot Selection
-                            Text(
-                              'Select Time Slot:',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: _timeSlots.map((slot) {
-                                final isBooked = dialogBookedSlots.contains(slot);
-                                final isSelected = _selectedTimeSlot == slot;
-                              return GestureDetector(
-                                onTap: isBooked
-                                    ? null
-                                    : () {
-                                        setDialogState(() {
-                                          _selectedTimeSlot = isSelected ? null : slot;
-                                        });
-                                      },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isBooked
-                                        ? Colors.red.shade50
-                                        : isSelected
-                                            ? Colors.purple.shade300
-                                            : Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isBooked
-                                          ? Colors.red.shade300
-                                          : isSelected
-                                              ? Colors.purple.shade700
-                                              : Colors.green.shade300,
-                                      width: isSelected ? 2 : 1,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.calendar_today, color: Colors.purple.shade700),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.purple.shade700,
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        isBooked ? Icons.close : Icons.check,
-                                        size: 14,
-                                        color: isBooked
-                                            ? Colors.red
-                                            : isSelected
-                                                ? Colors.white
-                                                : Colors.green,
+                                  const Spacer(),
+                                  Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Time Slot Selection
+                          Text(
+                            'Select Time Slot:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children:
+                                _timeSlots.map((slot) {
+                                  final isBooked = dialogBookedSlots.contains(slot);
+                                  final isSelected = _selectedTimeSlot == slot;
+                                  return GestureDetector(
+                                    onTap:
+                                        isBooked
+                                            ? null
+                                            : () {
+                                              setDialogState(() {
+                                                _selectedTimeSlot = isSelected ? null : slot;
+                                              });
+                                            },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
                                       ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        slot,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                          color: isBooked
-                                              ? Colors.red.shade700
-                                              : isSelected
-                                                  ? Colors.white
-                                                  : Colors.green.shade700,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            isBooked
+                                                ? Colors.red.shade50
+                                                : isSelected
+                                                ? Colors.purple.shade300
+                                                : Colors.green.shade50,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color:
+                                              isBooked
+                                                  ? Colors.red.shade300
+                                                  : isSelected
+                                                  ? Colors.purple.shade700
+                                                  : Colors.green.shade300,
+                                          width: isSelected ? 2 : 1,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }).toList(),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            isBooked ? Icons.close : Icons.check,
+                                            size: 14,
+                                            color:
+                                                isBooked
+                                                    ? Colors.red
+                                                    : isSelected
+                                                    ? Colors.white
+                                                    : Colors.green,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            slot,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 12,
+                                              color:
+                                                  isBooked
+                                                      ? Colors.red.shade700
+                                                      : isSelected
+                                                      ? Colors.white
+                                                      : Colors.green.shade700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                           ),
                           const SizedBox(height: 20),
                           // Customer Name
@@ -734,7 +752,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   alignment: Alignment.center,
                                   child: Text(
                                     '$_durationHours',
-                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                                 IconButton(
@@ -806,7 +827,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   alignment: Alignment.center,
                                   child: Text(
                                     '$_durationMinutes min',
-                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                                 IconButton(
@@ -928,8 +952,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   ),
                 ),
               );
-                },
-            ),
+            },
+          ),
     );
   }
 
@@ -991,10 +1015,10 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         final bookedTimeSlot = data['timeSlot'] as String? ?? '';
         final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
         final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-        
+
         // Skip if no time slot
         if (bookedTimeSlot.isEmpty) continue;
-        
+
         // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
         // Only 'cancelled' bookings don't block (time slots are available)
         // Once a booking is made, it blocks the slot regardless of pending/done status
@@ -1041,7 +1065,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
       // Convert selected time slot from 12-hour to 24-hour format for storage
       final timeSlot24Hour = _formatTime24Hour(_selectedTimeSlot!);
-      
+
       final bookingData = {
         'serviceType': _selectedServiceType,
         'date': dateId,
@@ -1127,21 +1151,24 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mark as Done'),
-        content: const Text('Are you sure you want to mark this booking as done? It will be moved to history.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Mark as Done'),
+            content: const Text(
+              'Are you sure you want to mark this booking as done? It will be moved to history.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text('Confirm'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
     );
 
     if (confirm != true) return;
@@ -1169,25 +1196,26 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
     // Show confirmation dialog
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Booking'),
-        content: Text(
-          isHistory
-              ? 'Are you sure you want to delete this booking from history? This action cannot be undone.'
-              : 'Are you sure you want to delete this booking? This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Booking'),
+            content: Text(
+              isHistory
+                  ? 'Are you sure you want to delete this booking from history? This action cannot be undone.'
+                  : 'Are you sure you want to delete this booking? This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
     );
 
     if (confirm != true) return;
@@ -1199,7 +1227,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       } else {
         await _firestore.collection('bookings').doc(bookingId).delete();
       }
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1705,14 +1733,14 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     final now = DateTime.now();
                     final maxDate = now;
                     final minDate = now.subtract(const Duration(days: 365));
-                    
+
                     final picked = await showDatePicker(
                       context: context,
                       initialDate: _historyFilterDate,
                       firstDate: minDate,
                       lastDate: maxDate,
                     );
-                    
+
                     if (picked != null) {
                       setState(() {
                         _historyFilterDate = picked;
@@ -1733,10 +1761,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         Expanded(
                           child: Text(
                             DateFormat('MMM dd, yyyy').format(_historyFilterDate),
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.purple.shade700,
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.purple.shade700),
                           ),
                         ),
                         IconButton(
@@ -1761,11 +1786,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         // History List
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('bookings')
-                .where('status', isEqualTo: 'done')
-                .limit(100)
-                .snapshots(),
+            stream:
+                _firestore
+                    .collection('bookings')
+                    .where('status', isEqualTo: 'done')
+                    .limit(100)
+                    .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -1777,22 +1803,23 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                 builder: (context, archiveSnapshot) {
                   // Combine done bookings and archived bookings
                   List<QueryDocumentSnapshot> allBookings = [];
-                  
+
                   if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
                     allBookings.addAll(snapshot.data!.docs);
                   }
-                  
+
                   if (archiveSnapshot.hasData && archiveSnapshot.data!.docs.isNotEmpty) {
                     allBookings.addAll(archiveSnapshot.data!.docs);
                   }
 
                   // Apply date filter
                   final filterDateId = DateFormat('yyyy-MM-dd').format(_historyFilterDate);
-                  allBookings = allBookings.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final bookingDate = data['date'] as String? ?? '';
-                    return bookingDate == filterDateId;
-                  }).toList();
+                  allBookings =
+                      allBookings.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final bookingDate = data['date'] as String? ?? '';
+                        return bookingDate == filterDateId;
+                      }).toList();
 
                   if (allBookings.isEmpty) {
                     return Center(
@@ -1815,17 +1842,19 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   sortedDocs.sort((a, b) {
                     final dataA = a.data() as Map<String, dynamic>;
                     final dataB = b.data() as Map<String, dynamic>;
-                    
+
                     // Try archivedAt first, then dateTimestamp, then completedAt
-                    DateTime dateA = (dataA['archivedAt'] as Timestamp?)?.toDate() ??
+                    DateTime dateA =
+                        (dataA['archivedAt'] as Timestamp?)?.toDate() ??
                         (dataA['dateTimestamp'] as Timestamp?)?.toDate() ??
                         (dataA['completedAt'] as Timestamp?)?.toDate() ??
                         DateTime(2000);
-                    DateTime dateB = (dataB['archivedAt'] as Timestamp?)?.toDate() ??
+                    DateTime dateB =
+                        (dataB['archivedAt'] as Timestamp?)?.toDate() ??
                         (dataB['dateTimestamp'] as Timestamp?)?.toDate() ??
                         (dataB['completedAt'] as Timestamp?)?.toDate() ??
                         DateTime(2000);
-                    
+
                     return dateB.compareTo(dateA);
                   });
 
@@ -1846,7 +1875,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       final date = (data['dateTimestamp'] as Timestamp?)?.toDate();
                       final completedAt = (data['completedAt'] as Timestamp?)?.toDate();
 
-                            return Card(
+                      return Card(
                         margin: const EdgeInsets.only(bottom: 6),
                         elevation: 2,
                         child: Padding(
@@ -1856,7 +1885,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               CircleAvatar(
                                 radius: 18,
                                 backgroundColor: _getServiceColor(serviceType),
-                                child: Icon(_getServiceIcon(serviceType), color: Colors.white, size: 16),
+                                child: Icon(
+                                  _getServiceIcon(serviceType),
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -1868,18 +1901,27 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       children: [
                                         Text(
                                           '$serviceType',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
                                         ),
                                         const SizedBox(width: 4),
                                         Text(
                                           timeSlot,
-                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade700,
+                                          ),
                                         ),
                                         if (date != null) ...[
                                           const SizedBox(width: 8),
                                           Text(
                                             DateFormat('MMM dd').format(date),
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
                                           ),
                                         ],
                                       ],
@@ -1887,27 +1929,39 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     const SizedBox(height: 2),
                                     Text(
                                       customerName,
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                     const SizedBox(height: 2),
                                     Row(
                                       children: [
                                         Text(
                                           '${durationHours}h',
-                                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                          ),
                                         ),
                                         if (consoleCount != null) ...[
                                           const SizedBox(width: 8),
                                           Text(
                                             '$consoleCount consoles',
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
                                           ),
                                         ],
                                         if (serviceType == 'Theatre' && totalPeople != null) ...[
                                           const SizedBox(width: 8),
                                           Text(
                                             '$totalPeople people',
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
                                           ),
                                         ],
                                       ],

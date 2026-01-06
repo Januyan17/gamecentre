@@ -82,15 +82,40 @@ Future<void> _checkAndShowNotification(
     final services = List<Map<String, dynamic>>.from(
       sessionData['services'] ?? [],
     );
-    final serviceExists = services.any(
-      (service) => (service['id'] as String? ?? '') == serviceId,
-    );
 
+    // Try to find service by ID first
+    bool serviceExists = services.any((service) {
+      final sid = service['id'] as String?;
+      return sid != null && sid.isNotEmpty && sid == serviceId;
+    });
+
+    // If not found by ID, but session is active, we'll still check notification settings
+    // This handles cases where service ID might not match exactly (e.g., service was updated)
     if (!serviceExists) {
       debugPrint(
-        'ℹ️ Service $serviceId no longer exists in session $sessionId. Not showing notification.',
+        '⚠️ Service $serviceId not found by ID in session $sessionId.',
       );
-      return;
+      // Check if there are any services of the same type in the session
+      final serviceType = params['serviceType'] as String? ?? '';
+      final hasServicesOfType = services.any(
+        (s) =>
+            (s['type'] as String? ?? '').toLowerCase() ==
+            serviceType.toLowerCase(),
+      );
+
+      if (!hasServicesOfType) {
+        debugPrint(
+          'ℹ️ No services of type $serviceType found in session. Not showing notification.',
+        );
+        return;
+      }
+
+      debugPrint(
+        '⚠️ Service ID not found, but session has $serviceType services. Will check notification setting.',
+      );
+      // Continue to check notification settings - don't return yet
+    } else {
+      debugPrint('✅ Service $serviceId found in session $sessionId');
     }
 
     // Get service type from params to check specific notification setting
