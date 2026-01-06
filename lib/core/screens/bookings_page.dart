@@ -85,21 +85,31 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       final data = doc.data() as Map<String, dynamic>;
       final timeSlot = data['timeSlot'] as String? ?? '';
       final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+      final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+      
+      // Skip if no time slot
+      if (timeSlot.isEmpty) continue;
+      
+      // IMPORTANT: Block time slots for 'pending', 'confirmed', and 'done' bookings
+      // Only 'cancelled' bookings should NOT block (time slots become available/green)
+      // Once a booking is made, it blocks the slot regardless of pending/done status
+      if (status == 'cancelled') {
+        continue; // Skip - don't add to bookedSlots, so it shows as available (green)
+      }
+      // 'pending', 'confirmed', and 'done' bookings will block the time slot (red)
 
-      if (timeSlot.isNotEmpty) {
-        // Parse time slot (e.g., "14:00")
-        final parts = timeSlot.split(':');
-        if (parts.length == 2) {
-          final startHour = int.tryParse(parts[0]) ?? 0;
-          // Use ceil to round up - if booking is 30 minutes (0.5 hours), mark the hour as booked
-          final durationHoursRounded = durationHours.ceil();
-          // Mark all slots within the duration as booked
-          for (int i = 0; i < durationHoursRounded; i++) {
-            final hour = startHour + i;
-            if (hour <= 23) {
-              final slot = '${hour.toString().padLeft(2, '0')}:00';
-              bookedSlots.add(slot);
-            }
+      // Parse time slot (e.g., "14:00")
+      final parts = timeSlot.split(':');
+      if (parts.length == 2) {
+        final startHour = int.tryParse(parts[0]) ?? 0;
+        // Use ceil to round up - if booking is 30 minutes (0.5 hours), mark the hour as booked
+        final durationHoursRounded = durationHours.ceil();
+        // Mark all slots within the duration as booked
+        for (int i = 0; i < durationHoursRounded; i++) {
+          final hour = startHour + i;
+          if (hour <= 23) {
+            final slot = '${hour.toString().padLeft(2, '0')}:00';
+            bookedSlots.add(slot);
           }
         }
       }
@@ -205,10 +215,18 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       
       final timeSlot = data['timeSlot'] as String? ?? '';
       final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-      final status = data['status'] as String? ?? 'pending';
+      final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
       
-      // Only consider active bookings (not done)
-      if (status == 'done' || timeSlot.isEmpty) continue;
+      // Skip if no time slot
+      if (timeSlot.isEmpty) continue;
+      
+      // IMPORTANT: Block time slots for 'pending', 'confirmed', and 'done' bookings
+      // Only 'cancelled' bookings should NOT block (time slots become available/green)
+      // Once a booking is made, it blocks the slot regardless of pending/done status
+      if (status == 'cancelled') {
+        continue; // Skip - don't add to bookedSlots, so it shows as available (green)
+      }
+      // 'pending', 'confirmed', and 'done' bookings will block the time slot (red)
       
       final parts = timeSlot.split(':');
       if (parts.length == 2) {
@@ -633,20 +651,30 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         final data = doc.data();
         final bookedTimeSlot = data['timeSlot'] as String? ?? '';
         final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        
+        // Skip if no time slot
+        if (bookedTimeSlot.isEmpty) continue;
+        
+        // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
+        // Only 'cancelled' bookings don't block (time slots are available)
+        // Once a booking is made, it blocks the slot regardless of pending/done status
+        if (status == 'cancelled') {
+          continue; // Skip - don't check for conflicts, allow the booking
+        }
+        // 'pending', 'confirmed', and 'done' bookings will cause conflicts
 
-        if (bookedTimeSlot.isNotEmpty) {
-          final bookedParts = bookedTimeSlot.split(':');
-          final bookedHour = bookedParts.length == 2 ? int.tryParse(bookedParts[0]) ?? 0 : 0;
-          final bookedEndHour = bookedHour + bookedDuration;
+        final bookedParts = bookedTimeSlot.split(':');
+        final bookedHour = bookedParts.length == 2 ? int.tryParse(bookedParts[0]) ?? 0 : 0;
+        final bookedEndHour = bookedHour + bookedDuration;
 
-          // Check if our booking overlaps with existing booking
-          final ourEndHour = selectedHour + ourDurationHours;
-          if ((selectedHour >= bookedHour && selectedHour < bookedEndHour) ||
-              (ourEndHour > bookedHour && ourEndHour <= bookedEndHour) ||
-              (selectedHour <= bookedHour && ourEndHour >= bookedEndHour)) {
-            hasConflict = true;
-            break;
-          }
+        // Check if our booking overlaps with existing booking
+        final ourEndHour = selectedHour + ourDurationHours;
+        if ((selectedHour >= bookedHour && selectedHour < bookedEndHour) ||
+            (ourEndHour > bookedHour && ourEndHour <= bookedEndHour) ||
+            (selectedHour <= bookedHour && ourEndHour >= bookedEndHour)) {
+          hasConflict = true;
+          break;
         }
       }
 

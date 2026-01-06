@@ -179,10 +179,39 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading
+        
+        // Extract error message
+        String errorMessage = 'Error adding devices';
+        final errorStr = e.toString();
+        
+        if (errorStr.contains('conflicts with an existing booking')) {
+          // Extract the detailed conflict message (handles multi-line)
+          final match = RegExp(r'This time slot conflicts with an existing booking\.\s*(.+)', dotAll: true).firstMatch(errorStr);
+          if (match != null) {
+            errorMessage = '⚠️ Booking Conflict\n\n${match.group(1)!.trim()}';
+          } else {
+            errorMessage = '⚠️ This time slot conflicts with an existing booking.\nPlease choose a different time.';
+          }
+        } else if (errorStr.contains('No active session')) {
+          errorMessage = 'No active session. Please create a session first.';
+        } else {
+          errorMessage = 'Error adding devices:\n${errorStr.replaceAll('Exception: ', '').trim()}';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error adding devices: ${e.toString()}'),
+            content: Text(
+              errorMessage,
+              style: const TextStyle(fontSize: 14),
+            ),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }

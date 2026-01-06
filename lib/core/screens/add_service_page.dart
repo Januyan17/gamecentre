@@ -7,9 +7,57 @@ import '../providers/session_provider.dart';
 class AddServicePage extends StatelessWidget {
   const AddServicePage({super.key});
 
-  void _add(BuildContext context, Map<String, dynamic> service) {
-    context.read<SessionProvider>().addService(service);
-    Navigator.pop(context);
+  void _add(BuildContext context, Map<String, dynamic> service) async {
+    try {
+      await context.read<SessionProvider>().addService(service);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Service added successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        // Extract error message
+        String errorMessage = 'Error adding service';
+        final errorStr = e.toString();
+        
+        if (errorStr.contains('conflicts with an existing booking')) {
+          // Extract the detailed conflict message (handles multi-line)
+          final match = RegExp(r'This time slot conflicts with an existing booking\.\s*(.+)', dotAll: true).firstMatch(errorStr);
+          if (match != null) {
+            errorMessage = '⚠️ Booking Conflict\n\n${match.group(1)!.trim()}';
+          } else {
+            errorMessage = '⚠️ This time slot conflicts with an existing booking.\nPlease choose a different time.';
+          }
+        } else if (errorStr.contains('No active session')) {
+          errorMessage = 'No active session. Please create a session first.';
+        } else {
+          errorMessage = 'Error adding service:\n${errorStr.replaceAll('Exception: ', '').trim()}';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorMessage,
+              style: const TextStyle(fontSize: 14),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            action: SnackBarAction(
+              label: 'OK',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rowzow/core/services/session_service.dart';
 import 'package:rowzow/core/services/notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class SessionProvider extends ChangeNotifier {
   final SessionService _service = SessionService();
@@ -53,6 +54,9 @@ class SessionProvider extends ChangeNotifier {
       throw Exception('No active session. Please create a session first.');
     }
     try {
+      // Check for booking conflicts before adding service
+      await _checkBookingConflict(service);
+      
       await _service.addService(activeSessionId!, service);
       await refreshSession();
       
@@ -61,6 +65,107 @@ class SessionProvider extends ChangeNotifier {
     } catch (e) {
       // Re-throw to let the caller handle it
       rethrow;
+    }
+  }
+
+  /// Check if the service time conflicts with existing bookings
+  Future<void> _checkBookingConflict(Map<String, dynamic> service) async {
+    final serviceType = service['type'] as String? ?? '';
+    final startTimeStr = service['startTime'] as String?;
+    
+    if (startTimeStr == null || serviceType.isEmpty) {
+      return; // No conflict check needed if no start time or service type
+    }
+
+    try {
+      final startTime = DateTime.parse(startTimeStr);
+      final dateId = DateFormat('yyyy-MM-dd').format(startTime);
+      
+      // Calculate duration based on service type
+      double serviceDurationHours = 0.0;
+      
+      if (serviceType == 'PS4' || serviceType == 'PS5') {
+        final hours = (service['hours'] as num?)?.toInt() ?? 0;
+        final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+        serviceDurationHours = hours + (minutes / 60.0);
+      } else if (serviceType == 'Theatre') {
+        final hours = (service['hours'] as num?)?.toInt() ?? 1;
+        serviceDurationHours = hours.toDouble();
+      } else if (serviceType == 'Simulator' || serviceType == 'VR') {
+        final games = (service['games'] as num?)?.toInt() ?? 1;
+        final durationMinutes = games * 5; // 5 minutes per game
+        serviceDurationHours = durationMinutes / 60.0;
+      }
+
+      if (serviceDurationHours <= 0) {
+        return; // No duration, no conflict
+      }
+
+      // Get existing bookings for this date and service type
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('date', isEqualTo: dateId)
+          .where('serviceType', isEqualTo: serviceType)
+          .get();
+
+      // Check for conflicts
+      final serviceStartHour = startTime.hour;
+      final serviceStartMinute = startTime.minute;
+      final serviceStartDecimal = serviceStartHour + (serviceStartMinute / 60.0);
+      final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        
+        // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
+        // Only 'cancelled' bookings don't block (time slots are available)
+        // Once a booking is made, it blocks the slot regardless of pending/done status
+        if (status == 'cancelled') {
+          continue; // Skip - don't check for conflicts, allow the service
+        }
+        // 'pending', 'confirmed', and 'done' bookings will cause conflicts
+
+        final bookedTimeSlot = data['timeSlot'] as String? ?? '';
+        if (bookedTimeSlot.isEmpty) continue;
+
+        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        
+        // Parse booked time slot (e.g., "14:00")
+        final bookedParts = bookedTimeSlot.split(':');
+        if (bookedParts.length != 2) continue;
+        
+        final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
+        final bookedStartDecimal = bookedHour.toDouble();
+        final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+
+        // Check if service overlaps with booking
+        if ((serviceStartDecimal >= bookedStartDecimal && serviceStartDecimal < bookedEndDecimal) ||
+            (serviceEndDecimal > bookedStartDecimal && serviceEndDecimal <= bookedEndDecimal) ||
+            (serviceStartDecimal <= bookedStartDecimal && serviceEndDecimal >= bookedEndDecimal)) {
+          // Format booked end time
+          final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
+          final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
+          final bookedEndTime = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+          
+          // Format service time
+          final serviceTimeStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+          
+          throw Exception(
+            'This time slot conflicts with an existing booking.\n\n'
+            'Your service time: $serviceTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
+            'Existing booking: $bookedTimeSlot - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+            'Please choose a different time to avoid conflicts.'
+          );
+        }
+      }
+    } catch (e) {
+      // If it's already our custom exception, re-throw it
+      if (e.toString().contains('conflicts with an existing booking')) {
+        rethrow;
+      }
+      // Otherwise, log and continue (don't block service addition for other errors)
+      debugPrint('Error checking booking conflict: $e');
     }
   }
 
