@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'device_selection_page.dart';
 import '../providers/session_provider.dart';
 import '../services/booking_logic_service.dart';
+import '../services/device_capacity_service.dart';
 import 'session_detail_page.dart';
 import 'create_booking_page.dart';
 
@@ -397,6 +398,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       builder:
           (context) => StatefulBuilder(
             builder: (context, setDialogState) {
+              // Get device capacity
+              final capacityFuture = DeviceCapacityService.getDeviceCapacity(serviceType);
+              
               // Function to reload availability for a new date
               Future<void> reloadAvailability(DateTime selectedDate) async {
                 try {
@@ -517,10 +521,38 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                 }
               }
 
-              return AlertDialog(
-                title: Text(
-                  '$serviceType Availability - ${DateFormat('MMM dd, yyyy').format(dialogSelectedDate)}',
-                ),
+              return FutureBuilder<int>(
+                future: DeviceCapacityService.getDeviceCapacity(serviceType),
+                builder: (context, capacitySnapshot) {
+                  final capacity = capacitySnapshot.data ?? 0;
+                  
+                  return AlertDialog(
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$serviceType Availability - ${DateFormat('MMM dd, yyyy').format(dialogSelectedDate)}',
+                        ),
+                        if (capacity > 0) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Total Devices: $capacity',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                 content: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.9,
@@ -591,45 +623,103 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children:
-                              timeSlots12Hour.asMap().entries.map((entry) {
-                                final index = entry.key;
-                                final slot12Hour = entry.value;
-                                final slot24Hour = timeSlots24Hour[index];
-                                // Check booked slots using 24-hour format
-                                final isBooked = dialogBookedSlots.contains(slot24Hour);
+                        FutureBuilder<int>(
+                          future: capacityFuture,
+                          builder: (context, capacitySnapshot) {
+                            final capacity = capacitySnapshot.data ?? 0;
+                            
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children:
+                                  timeSlots12Hour.asMap().entries.map((entry) {
+                                    final index = entry.key;
+                                    final slot12Hour = entry.value;
+                                    final slot24Hour = timeSlots24Hour[index];
+                                    // Check booked slots using 24-hour format
+                                    final isBooked = dialogBookedSlots.contains(slot24Hour);
 
-                                return FilterChip(
-                                  selected: false,
-                                  label: Text(slot12Hour),
-                                  onSelected: null, // Read-only in availability dialog
-                                  disabledColor: Colors.purple.shade100,
-                                  labelStyle: TextStyle(
-                                    color: isBooked ? Colors.red.shade900 : Colors.purple,
-                                    decoration: isBooked ? TextDecoration.lineThrough : null,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
-                                  ),
-                                  avatar:
-                                      isBooked
-                                          ? Icon(Icons.block, size: 16, color: Colors.red.shade800)
-                                          : Icon(
-                                            Icons.check_circle,
-                                            size: 16,
-                                            color: Colors.purple,
+                                    return FutureBuilder<int>(
+                                      future: capacity > 0
+                                          ? DeviceCapacityService.getAvailableSlots(
+                                              deviceType: serviceType,
+                                              date: DateFormat('yyyy-MM-dd').format(dialogSelectedDate),
+                                              timeSlot: slot24Hour,
+                                              durationHours: 0.5, // Use 30 minutes (0.5 hours) to check each slot individually
+                                            )
+                                          : Future.value(999),
+                                      builder: (context, slotsSnapshot) {
+                                        final availableSlots = slotsSnapshot.data ?? 0;
+                                        // Only mark as fully booked if capacity > 0 AND all slots are booked
+                                        // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                                        final isFullyBooked = capacity > 0 
+                                            ? availableSlots == 0 
+                                            : isBooked;
+
+                                        return FilterChip(
+                                          selected: false,
+                                          label: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(slot12Hour),
+                                              if (capacity > 0 && slotsSnapshot.hasData) ...[
+                                                const SizedBox(width: 4),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: availableSlots > 0
+                                                        ? Colors.green.shade100
+                                                        : Colors.red.shade100,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    '$availableSlots',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: availableSlots > 0
+                                                          ? Colors.green.shade900
+                                                          : Colors.red.shade900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
-                                  tooltip:
-                                      isBooked ? 'This time slot is already booked' : 'Available',
-                                  backgroundColor: isBooked ? Colors.red : Colors.purple,
-                                  side: BorderSide(
-                                    color: isBooked ? Colors.red.shade500 : Colors.purple,
-                                    width: 1,
-                                  ),
-                                );
-                              }).toList(),
+                                          onSelected: null, // Read-only in availability dialog
+                                          disabledColor: Colors.purple.shade100,
+                                          labelStyle: TextStyle(
+                                            color: isFullyBooked ? Colors.red.shade900 : Colors.purple,
+                                            decoration: isFullyBooked ? TextDecoration.lineThrough : null,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
+                                          avatar:
+                                              isFullyBooked
+                                                  ? Icon(Icons.block, size: 16, color: Colors.red.shade800)
+                                                  : Icon(
+                                                    Icons.check_circle,
+                                                    size: 16,
+                                                    color: Colors.purple,
+                                                  ),
+                                          tooltip: isFullyBooked
+                                              ? capacity > 0
+                                                  ? 'All $capacity slots are booked for this time'
+                                                  : 'This time slot is already booked'
+                                              : capacity > 0
+                                                  ? '$availableSlots of $capacity slots available'
+                                                  : 'Available',
+                                          backgroundColor: isFullyBooked ? Colors.red : Colors.purple,
+                                          side: BorderSide(
+                                            color: isFullyBooked ? Colors.red.shade500 : Colors.purple,
+                                            width: 1,
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  }).toList(),
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                         Row(
@@ -685,6 +775,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                     child: const Text('Book Now'),
                   ),
                 ],
+                  );
+                },
               );
             },
           ),

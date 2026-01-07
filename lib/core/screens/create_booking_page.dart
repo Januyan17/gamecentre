@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/booking_logic_service.dart';
+import '../services/device_capacity_service.dart';
 
 class CreateBookingPage extends StatefulWidget {
   final DateTime selectedDate;
@@ -47,6 +48,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   // Booked time slots for the selected date and service type
   Set<String> _bookedTimeSlots = {};
 
+  // Device capacity info
+  int _deviceCapacity = 0;
+  bool _loadingCapacity = false;
+
   // Common scenarios
   List<Map<String, dynamic>> _commonScenarios = [];
   bool _loadingScenarios = true;
@@ -62,6 +67,28 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     _calculatePrice();
     _loadBookedTimeSlots();
     _loadCommonScenarios();
+    _loadDeviceCapacity();
+  }
+
+  Future<void> _loadDeviceCapacity() async {
+    if (_selectedServiceType == null) return;
+    
+    setState(() {
+      _loadingCapacity = true;
+    });
+    
+    try {
+      final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+      setState(() {
+        _deviceCapacity = capacity;
+        _loadingCapacity = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading device capacity: $e');
+      setState(() {
+        _loadingCapacity = false;
+      });
+    }
   }
 
   // Load common scenarios using Future instead of Stream
@@ -415,6 +442,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     // Recalculate price with new service type
     _calculatePrice();
     _loadBookedTimeSlots();
+    _loadDeviceCapacity();
   }
 
   Future<void> _createBooking() async {
@@ -499,7 +527,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         durationHours = _theatreHours.toDouble();
       }
 
-      // Check for conflicts
+      // Check for conflicts and capacity
       final hasConflict = await BookingLogicService.hasTimeConflict(
         deviceType: _selectedServiceType!,
         date: dateId,
@@ -510,16 +538,36 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       if (hasConflict) {
         if (mounted) {
           Navigator.pop(context); // Close loading
+          
+          // Get capacity info for better error message
+          final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+          final availableSlots = await DeviceCapacityService.getAvailableSlots(
+            deviceType: _selectedServiceType!,
+            date: dateId,
+            timeSlot: timeSlot24Hour,
+            durationHours: durationHours,
+          );
+          
+          String errorMessage;
+          if (capacity > 0 && availableSlots == 0) {
+            errorMessage = 'All ${capacity} ${_selectedServiceType} slots are booked for this time. Please choose a different time.';
+          } else {
+            errorMessage = 'This time slot conflicts with an existing booking or active session.';
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('This time slot conflicts with an existing booking or active session'),
+            SnackBar(
+              content: Text(errorMessage),
               backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
+              duration: const Duration(seconds: 4),
             ),
           );
         }
         return;
       }
+
+      // Get next available slot ID
+      final slotId = await DeviceCapacityService.getNextSlotId(_selectedServiceType!);
 
       // Create booking data
       final bookingData = {
@@ -529,6 +577,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         'timeSlot': timeSlot24Hour,
         'serviceType': _selectedServiceType,
         'durationHours': durationHours,
+        'slotId': slotId, // Assign slot ID
         if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4')
           'consoleCount': _consoleCount,
         if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') ...{
@@ -596,6 +645,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     });
     _calculatePrice();
     _loadBookedTimeSlots(); // Reload booked slots for the new service type
+    _loadDeviceCapacity(); // Reload capacity for new service type
   }
 
   Widget _buildQuickAddSection() {
@@ -853,6 +903,12 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
                   // Service Type Selection
                   _buildServiceTypeSection(),
+
+                  const SizedBox(height: 24),
+
+                  // Device Capacity Info
+                  if (_selectedServiceType != null && !_loadingCapacity)
+                    _buildCapacityInfoSection(),
 
                   const SizedBox(height: 24),
 
@@ -1392,6 +1448,56 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     return time12Hour;
   }
 
+  Widget _buildCapacityInfoSection() {
+    if (_deviceCapacity == 0) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.orange.shade700, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Device capacity not configured. Unlimited bookings allowed.',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.devices, color: Colors.blue.shade700, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Total ${_selectedServiceType} devices: $_deviceCapacity',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.blue.shade900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTimeSlotSection() {
     // Time slots in 24-hour format (for internal processing)
     final List<String> _timeSlots24Hour = [
@@ -1430,10 +1536,24 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     final List<String> _timeSlots =
         _timeSlots24Hour.map((slot) => _formatTime12Hour(slot)).toList();
 
+    // Use fixed 30-minute (0.5 hour) duration for checking availability of each time slot
+    // This ensures we check availability for that specific time slot only, not overlapping with adjacent slots
+    // The user's actual duration will be checked when they try to create the booking
+    const double slotCheckDurationHours = 0.5;
+
+    final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text('Time Slot', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        if (_deviceCapacity > 0) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Available slots shown for each time (Total: $_deviceCapacity devices)',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+          ),
+        ],
         const SizedBox(height: 16),
         Row(
           children: [
@@ -1450,30 +1570,81 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       // Check booked slots using 24-hour format
                       final isBooked = _bookedTimeSlots.contains(slot24Hour);
 
-                      return FilterChip(
-                        selected: isSelected,
-                        label: Text(slot12Hour),
-                        onSelected:
-                            isBooked
-                                ? null
-                                : (selected) {
-                                  setState(() {
-                                    _selectedTimeSlot = selected ? slot12Hour : null;
-                                  });
-                                },
-                        disabledColor: Colors.red.shade100,
-                        labelStyle: TextStyle(
-                          color:
-                              isBooked
+                      return FutureBuilder<int>(
+                        future: _deviceCapacity > 0
+                            ? DeviceCapacityService.getAvailableSlots(
+                                deviceType: _selectedServiceType!,
+                                date: dateId,
+                                timeSlot: slot24Hour,
+                                durationHours: slotCheckDurationHours, // Use fixed 1-hour for display
+                              )
+                            : Future.value(999),
+                        builder: (context, snapshot) {
+                          final availableSlots = snapshot.data ?? 0;
+                          // Only disable if capacity > 0 AND all slots are booked (availableSlots == 0)
+                          // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                          final isFullyBooked = _deviceCapacity > 0 
+                              ? availableSlots == 0 
+                              : isBooked;
+                          final canSelect = !isFullyBooked;
+
+                          return FilterChip(
+                            selected: isSelected,
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(slot12Hour),
+                                if (_deviceCapacity > 0 && snapshot.hasData) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: availableSlots > 0
+                                          ? Colors.green.shade100
+                                          : Colors.red.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '$availableSlots',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: availableSlots > 0
+                                            ? Colors.green.shade900
+                                            : Colors.red.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            onSelected: canSelect
+                                ? (selected) {
+                                    setState(() {
+                                      _selectedTimeSlot = selected ? slot12Hour : null;
+                                    });
+                                  }
+                                : null,
+                            disabledColor: Colors.red.shade100,
+                            selectedColor: Colors.green.shade300,
+                            labelStyle: TextStyle(
+                              color: isFullyBooked
                                   ? Colors.red.shade700
                                   : (isSelected ? Colors.white : Colors.black),
-                          decoration: isBooked ? TextDecoration.lineThrough : null,
-                        ),
-                        avatar:
-                            isBooked
+                              decoration: isFullyBooked ? TextDecoration.lineThrough : null,
+                            ),
+                            avatar: isFullyBooked
                                 ? Icon(Icons.block, size: 16, color: Colors.red.shade700)
                                 : null,
-                        tooltip: isBooked ? 'This time slot is already booked' : null,
+                            tooltip: isFullyBooked
+                                ? _deviceCapacity > 0
+                                    ? 'All $_deviceCapacity slots are booked for this time'
+                                    : 'This time slot is already booked'
+                                : _deviceCapacity > 0
+                                    ? '$availableSlots of $_deviceCapacity slots available'
+                                    : 'Available',
+                          );
+                        },
                       );
                     }).toList(),
               ),
@@ -1497,7 +1668,58 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           const SizedBox(height: 8),
           ListTile(
             title: const Text('Select Time'),
-            subtitle: Text(_customTime != null ? _customTime!.format(context) : 'Tap to select'),
+            subtitle: _customTime != null
+                ? FutureBuilder<int>(
+                    future: _deviceCapacity > 0 && _selectedServiceType != null
+                        ? DeviceCapacityService.getAvailableSlots(
+                            deviceType: _selectedServiceType!,
+                            date: DateFormat('yyyy-MM-dd').format(_selectedDate),
+                            timeSlot: '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}',
+                            durationHours: _selectedServiceType == 'PS4' || _selectedServiceType == 'PS5'
+                                ? _durationHours + (_minutes / 60.0)
+                                : _selectedServiceType == 'Simulator' || _selectedServiceType == 'VR'
+                                    ? (_numberOfPeople * 5) / 60.0
+                                    : _theatreHours.toDouble(),
+                          )
+                        : Future.value(999),
+                    builder: (context, snapshot) {
+                      final availableSlots = snapshot.data ?? 0;
+                      final timeStr = _customTime!.format(context);
+                      
+                      if (_deviceCapacity > 0 && snapshot.hasData) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(timeStr),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: availableSlots > 0
+                                    ? Colors.green.shade100
+                                    : Colors.red.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                availableSlots > 0
+                                    ? '$availableSlots of $_deviceCapacity slots available'
+                                    : 'All $_deviceCapacity slots booked',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: availableSlots > 0
+                                      ? Colors.green.shade900
+                                      : Colors.red.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return Text(timeStr);
+                    },
+                  )
+                : const Text('Tap to select'),
             trailing: const Icon(Icons.access_time),
             onTap: () async {
               final time = await showTimePicker(

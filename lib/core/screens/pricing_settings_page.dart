@@ -47,6 +47,13 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
   final TextEditingController _additionalControllerController =
       TextEditingController();
 
+  // Device Capacity Controllers
+  final TextEditingController _ps5CountController = TextEditingController();
+  final TextEditingController _ps4CountController = TextEditingController();
+  final TextEditingController _vrCountController = TextEditingController();
+  final TextEditingController _simulatorCountController =
+      TextEditingController();
+
   bool _isLoading = false;
   bool _isSaving = false;
   bool _ps4NotificationsEnabled = true;
@@ -76,6 +83,10 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
     _person3hrController.dispose();
     _person4hrController.dispose();
     _additionalControllerController.dispose();
+    _ps5CountController.dispose();
+    _ps4CountController.dispose();
+    _vrCountController.dispose();
+    _simulatorCountController.dispose();
     super.dispose();
   }
 
@@ -117,6 +128,24 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
         _person3hrController.text = '350';
         _person4hrController.text = '350';
         _additionalControllerController.text = '150';
+      }
+
+      // Load device capacity settings
+      final capacityDoc =
+          await _firestore.collection('settings').doc('device_capacity').get();
+      if (capacityDoc.exists) {
+        final capacityData = capacityDoc.data() as Map<String, dynamic>;
+        _ps5CountController.text = (capacityData['ps5Count'] ?? 0).toString();
+        _ps4CountController.text = (capacityData['ps4Count'] ?? 0).toString();
+        _vrCountController.text = (capacityData['vrCount'] ?? 0).toString();
+        _simulatorCountController.text =
+            (capacityData['simulatorCount'] ?? 0).toString();
+      } else {
+        // Set default values
+        _ps5CountController.text = '0';
+        _ps4CountController.text = '0';
+        _vrCountController.text = '0';
+        _simulatorCountController.text = '0';
       }
 
       // Load notification settings
@@ -165,13 +194,22 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      // Save device capacity settings
+      await _firestore.collection('settings').doc('device_capacity').set({
+        'ps5Count': int.parse(_ps5CountController.text),
+        'ps4Count': int.parse(_ps4CountController.text),
+        'vrCount': int.parse(_vrCountController.text),
+        'simulatorCount': int.parse(_simulatorCountController.text),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       // Clear price cache so new prices are loaded
       PriceCalculator.clearCache();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Prices saved successfully'),
+            content: Text('Prices and device capacity saved successfully'),
             backgroundColor: Colors.green,
           ),
         );
@@ -180,7 +218,7 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error saving prices: $e'),
+            content: Text('Error saving settings: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -268,6 +306,8 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
     required String label,
     required TextEditingController controller,
     String? hint,
+    String? prefixText,
+    bool isInteger = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -277,19 +317,29 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
           labelText: label,
           hintText: hint,
           border: const OutlineInputBorder(),
-          prefixText: 'Rs ',
+          prefixText: prefixText,
         ),
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        inputFormatters: [
-          FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
-        ],
+        keyboardType: TextInputType.number,
+        inputFormatters:
+            isInteger
+                ? [FilteringTextInputFormatter.allow(RegExp(r'^\d+'))]
+                : [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                ],
         validator: (value) {
           if (value == null || value.isEmpty) {
-            return 'Please enter a price';
+            return 'Please enter a value';
           }
-          final price = double.tryParse(value);
-          if (price == null || price < 0) {
-            return 'Please enter a valid price';
+          if (isInteger) {
+            final intValue = int.tryParse(value);
+            if (intValue == null || intValue < 0) {
+              return 'Please enter a valid number (0 or greater)';
+            }
+          } else {
+            final price = double.tryParse(value);
+            if (price == null || price < 0) {
+              return 'Please enter a valid price';
+            }
           }
           return null;
         },
@@ -461,10 +511,107 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                               _buildTextField(
                                 label: 'PS4 Hourly Rate',
                                 controller: _ps4HourlyController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: 'PS5 Hourly Rate',
                                 controller: _ps5HourlyController,
+                                prefixText: 'Rs ',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Device Capacity Settings
+                      Card(
+                        color: Colors.orange.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.devices,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Device Capacity',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Set the total number of available devices. This controls how many parallel bookings can be made for each device type.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildTextField(
+                                label: 'PS5 Count',
+                                controller: _ps5CountController,
+                                hint: 'Number of PS5 units available',
+                                isInteger: true,
+                              ),
+                              _buildTextField(
+                                label: 'PS4 Count',
+                                controller: _ps4CountController,
+                                hint: 'Number of PS4 units available',
+                                isInteger: true,
+                              ),
+                              _buildTextField(
+                                label: 'VR Count',
+                                controller: _vrCountController,
+                                hint: 'Number of VR units available',
+                                isInteger: true,
+                              ),
+                              _buildTextField(
+                                label: 'Simulator Count',
+                                controller: _simulatorCountController,
+                                hint:
+                                    'Number of Racing Simulator units available',
+                                isInteger: true,
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.orange.shade300,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.orange.shade700,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Setting count to 0 disables capacity checking (unlimited bookings). '
+                                        'Reducing capacity will prevent new bookings beyond the limit, but existing active sessions remain intact.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -491,6 +638,7 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                                 label:
                                     'Additional Controller Charge (per controller)',
                                 controller: _additionalControllerController,
+                                prefixText: 'Rs ',
                               ),
                             ],
                           ),
@@ -516,11 +664,13 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                               _buildTextField(
                                 label: 'VR Game Slot (2 games per slot)',
                                 controller: _vrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label:
                                     'Racing Wheel / Car Simulator (per game)',
                                 controller: _racingWheelController,
+                                prefixText: 'Rs ',
                               ),
                             ],
                           ),
@@ -546,18 +696,22 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                               _buildTextField(
                                 label: '1 Hour',
                                 controller: _theatre1hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '2 Hours',
                                 controller: _theatre2hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '3 Hours',
                                 controller: _theatre3hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '4 Hours',
                                 controller: _theatre4hrController,
+                                prefixText: 'Rs ',
                               ),
                             ],
                           ),
@@ -583,18 +737,22 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
                               _buildTextField(
                                 label: '1 Hour',
                                 controller: _person1hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '2 Hours',
                                 controller: _person2hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '3 Hours',
                                 controller: _person3hrController,
+                                prefixText: 'Rs ',
                               ),
                               _buildTextField(
                                 label: '4 Hours',
                                 controller: _person4hrController,
+                                prefixText: 'Rs ',
                               ),
                             ],
                           ),

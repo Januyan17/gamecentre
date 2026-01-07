@@ -1,0 +1,354 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart';
+
+/// Service for managing device capacity and slot allocation
+/// Handles capacity checks, slot counting, and automatic slot assignment
+class DeviceCapacityService {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Get device capacity from settings
+  /// Returns the number of available units for a device type
+  static Future<int> getDeviceCapacity(String deviceType) async {
+    try {
+      final doc = await _firestore.collection('settings').doc('device_capacity').get();
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        // Map device types to their capacity field names
+        final capacityField = _getCapacityFieldName(deviceType);
+        return (data[capacityField] ?? 0) as int;
+      }
+      return 0; // Default to 0 if not configured
+    } catch (e) {
+      debugPrint('Error getting device capacity: $e');
+      return 0;
+    }
+  }
+
+  /// Get capacity field name for device type
+  static String _getCapacityFieldName(String deviceType) {
+    switch (deviceType.toUpperCase()) {
+      case 'PS5':
+        return 'ps5Count';
+      case 'PS4':
+        return 'ps4Count';
+      case 'VR':
+        return 'vrCount';
+      case 'SIMULATOR':
+        return 'simulatorCount';
+      default:
+        return '${deviceType.toLowerCase()}Count';
+    }
+  }
+
+  /// Count how many slots are occupied for a given date, time, and device type
+  /// Considers: pending bookings, active sessions, and closed sessions (for today)
+  static Future<int> countOccupiedSlots({
+    required String deviceType,
+    required String date,
+    required String timeSlot,
+    required double durationHours,
+  }) async {
+    try {
+      int occupiedCount = 0;
+
+      // Parse time slot
+      final timeParts = timeSlot.split(':');
+      if (timeParts.length != 2) return 0;
+
+      final startHour = int.tryParse(timeParts[0]) ?? 0;
+      final startMinute = int.tryParse(timeParts[1]) ?? 0;
+      final startDecimal = startHour + (startMinute / 60.0);
+      final endDecimal = startDecimal + durationHours;
+
+      // Check bookings collection
+      final bookingsSnapshot = await _firestore
+          .collection('bookings')
+          .where('date', isEqualTo: date)
+          .where('serviceType', isEqualTo: deviceType)
+          .get();
+
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        if (status == 'cancelled') continue;
+
+        final bookingTimeSlot = data['timeSlot'] as String? ?? '';
+        if (bookingTimeSlot.isEmpty) continue;
+
+        final bookingTimeParts = bookingTimeSlot.split(':');
+        if (bookingTimeParts.length != 2) continue;
+
+        final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+        final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+        final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+        final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+        // Check for overlap: Two time ranges overlap if:
+        // - The start of one is before the end of the other, AND
+        // - The end of one is after the start of the other
+        // This means they share some common time period
+        final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
+        
+        // Only count if there's actual overlap (they share time)
+        if (hasOverlap) {
+          occupiedCount++;
+        }
+      }
+
+      // Check if date is in the past
+      final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final isPastDate = date.compareTo(todayId) < 0;
+
+      // Check active sessions (for today/future dates)
+      if (!isPastDate) {
+        final activeSessionsSnapshot = await _firestore
+            .collection('active_sessions')
+            .where('status', isEqualTo: 'active')
+            .get();
+
+        for (var sessionDoc in activeSessionsSnapshot.docs) {
+          final sessionData = sessionDoc.data();
+          final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+          for (var service in services) {
+            final serviceType = service['type'] as String? ?? '';
+            if (serviceType != deviceType) continue;
+
+            final startTimeStr = service['startTime'] as String? ?? '';
+            if (startTimeStr.isEmpty) continue;
+
+            try {
+              final startTime = DateTime.parse(startTimeStr);
+              final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+              if (serviceDateId != date) continue;
+
+              final hours = (service['hours'] as num?)?.toInt() ?? 0;
+              final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+              final serviceDurationHours = hours + (minutes / 60.0);
+
+              final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+              final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+              // Check for overlap
+              if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                occupiedCount++;
+              }
+            } catch (e) {
+              debugPrint('Error parsing session time: $e');
+              continue;
+            }
+          }
+        }
+
+        // Also check closed sessions for today's date
+        if (date == todayId) {
+          try {
+            final historySessionsSnapshot = await _firestore
+                .collection('days')
+                .doc(date)
+                .collection('sessions')
+                .where('status', isEqualTo: 'closed')
+                .get();
+
+            for (var sessionDoc in historySessionsSnapshot.docs) {
+              final sessionData = sessionDoc.data();
+              final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+              for (var service in services) {
+                final serviceType = service['type'] as String? ?? '';
+                if (serviceType != deviceType) continue;
+
+                final startTimeStr = service['startTime'] as String? ?? '';
+                if (startTimeStr.isEmpty) continue;
+
+                try {
+                  final startTime = DateTime.parse(startTimeStr);
+                  final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                  if (serviceDateId != date) continue;
+
+                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                  final serviceDurationHours = hours + (minutes / 60.0);
+
+                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                  final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+                  // Check for overlap
+                  if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                    occupiedCount++;
+                  }
+                } catch (e) {
+                  debugPrint('Error parsing closed session time: $e');
+                  continue;
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('Error checking closed sessions: $e');
+          }
+        }
+      } else {
+        // For past dates, check history sessions
+        try {
+          final historySessionsSnapshot = await _firestore
+              .collection('days')
+              .doc(date)
+              .collection('sessions')
+              .where('status', isEqualTo: 'closed')
+              .get();
+
+          for (var sessionDoc in historySessionsSnapshot.docs) {
+            final sessionData = sessionDoc.data();
+            final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+            for (var service in services) {
+              final serviceType = service['type'] as String? ?? '';
+              if (serviceType != deviceType) continue;
+
+              final startTimeStr = service['startTime'] as String? ?? '';
+              if (startTimeStr.isEmpty) continue;
+
+              try {
+                final startTime = DateTime.parse(startTimeStr);
+                final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                if (serviceDateId != date) continue;
+
+                final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                final serviceDurationHours = hours + (minutes / 60.0);
+
+                final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+                // Check for overlap
+                if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                  occupiedCount++;
+                }
+              } catch (e) {
+                debugPrint('Error parsing history session time: $e');
+                continue;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking history sessions: $e');
+        }
+      }
+
+      return occupiedCount;
+    } catch (e) {
+      debugPrint('Error counting occupied slots: $e');
+      return 0;
+    }
+  }
+
+  /// Check if a booking can be made (has available slots)
+  /// Returns true if booking is allowed, false if capacity is full
+  static Future<bool> canMakeBooking({
+    required String deviceType,
+    required String date,
+    required String timeSlot,
+    required double durationHours,
+  }) async {
+    try {
+      final capacity = await getDeviceCapacity(deviceType);
+      if (capacity == 0) {
+        // If capacity is 0, allow booking (backward compatibility)
+        // Admin should set capacity > 0 to enable slot management
+        return true;
+      }
+
+      final occupiedSlots = await countOccupiedSlots(
+        deviceType: deviceType,
+        date: date,
+        timeSlot: timeSlot,
+        durationHours: durationHours,
+      );
+
+      return occupiedSlots < capacity;
+    } catch (e) {
+      debugPrint('Error checking booking capacity: $e');
+      return false; // On error, block booking for safety
+    }
+  }
+
+  /// Get available slots count for a given date, time, and device type
+  static Future<int> getAvailableSlots({
+    required String deviceType,
+    required String date,
+    required String timeSlot,
+    required double durationHours,
+  }) async {
+    try {
+      final capacity = await getDeviceCapacity(deviceType);
+      if (capacity == 0) {
+        // If capacity is 0, return a large number (unlimited)
+        return 999;
+      }
+
+      final occupiedSlots = await countOccupiedSlots(
+        deviceType: deviceType,
+        date: date,
+        timeSlot: timeSlot,
+        durationHours: durationHours,
+      );
+
+      return (capacity - occupiedSlots).clamp(0, capacity);
+    } catch (e) {
+      debugPrint('Error getting available slots: $e');
+      return 0;
+    }
+  }
+
+  /// Generate next available slot ID for a device type
+  /// Format: PS5-1, PS5-2, etc.
+  static Future<String> getNextSlotId(String deviceType) async {
+    try {
+      // Get all bookings with slot IDs for this device type
+      final bookingsSnapshot = await _firestore
+          .collection('bookings')
+          .where('serviceType', isEqualTo: deviceType)
+          .get();
+
+      final Set<int> usedSlotNumbers = {};
+      
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final slotId = data['slotId'] as String?;
+        if (slotId != null && slotId.startsWith('$deviceType-')) {
+          final slotNumberStr = slotId.replaceFirst('$deviceType-', '');
+          final slotNumber = int.tryParse(slotNumberStr);
+          if (slotNumber != null) {
+            usedSlotNumbers.add(slotNumber);
+          }
+        }
+      }
+
+      // Find next available slot number
+      final capacity = await getDeviceCapacity(deviceType);
+      if (capacity > 0) {
+        for (int i = 1; i <= capacity; i++) {
+          if (!usedSlotNumbers.contains(i)) {
+            return '$deviceType-$i';
+          }
+        }
+        // If all slots are used, return the next number beyond capacity
+        // (This shouldn't happen if capacity checks work correctly)
+        return '$deviceType-${capacity + 1}';
+      } else {
+        // If capacity is 0, just use sequential numbering
+        final nextNumber = usedSlotNumbers.isEmpty 
+            ? 1 
+            : (usedSlotNumbers.reduce((a, b) => a > b ? a : b) + 1);
+        return '$deviceType-$nextNumber';
+      }
+    } catch (e) {
+      debugPrint('Error generating slot ID: $e');
+      // Fallback: return timestamp-based ID
+      return '$deviceType-${DateTime.now().millisecondsSinceEpoch}';
+    }
+  }
+}
+

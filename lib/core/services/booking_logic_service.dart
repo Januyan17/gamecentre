@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'price_calculator.dart';
+import 'device_capacity_service.dart';
 
 /// Centralized service for all booking-related logic.
 /// This includes pricing calculations, time extensions, controller add-ons,
@@ -189,6 +190,9 @@ class BookingLogicService {
   }
 
   /// Check if a time slot has conflicts with existing bookings or active sessions
+  /// Also checks device capacity to prevent overbooking
+  /// When capacity > 0, only capacity matters (multiple bookings can overlap if capacity allows)
+  /// When capacity == 0, uses old behavior (no overlapping bookings allowed)
   static Future<bool> hasTimeConflict({
     required String deviceType,
     required String date,
@@ -196,6 +200,25 @@ class BookingLogicService {
     required double durationHours,
   }) async {
     try {
+      // Check device capacity first
+      final capacity = await DeviceCapacityService.getDeviceCapacity(deviceType);
+      
+      if (capacity > 0) {
+        // When capacity is configured, only check capacity
+        // Multiple bookings can overlap if capacity allows
+        final canBook = await DeviceCapacityService.canMakeBooking(
+          deviceType: deviceType,
+          date: date,
+          timeSlot: timeSlot,
+          durationHours: durationHours,
+        );
+        
+        // If capacity allows, no conflict; if capacity is full, conflict exists
+        return !canBook;
+      }
+      
+      // When capacity == 0, use old behavior: check for any overlapping bookings
+      // This is for backward compatibility when capacity is not configured
       // Parse time slot (format: "HH:MM")
       final timeParts = timeSlot.split(':');
       if (timeParts.length != 2) {
