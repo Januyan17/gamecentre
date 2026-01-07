@@ -55,6 +55,28 @@ class BookingLogicService {
     }
   }
 
+  /// Get price per person for VR/Simulator
+  /// Each person gets 1 game (5 minutes)
+  /// Returns the price for one person (1 game)
+  static Future<double> getPricePerPerson({
+    required String deviceType,
+  }) async {
+    if (deviceType != 'VR' && deviceType != 'Simulator') {
+      throw Exception('getPricePerPerson is only for VR and Simulator');
+    }
+
+    // 1 game per person = 5 minutes
+    // For VR: price per game = price per person (from admin settings)
+    // For Simulator: price per game = price per person (from admin settings)
+    if (deviceType == 'VR') {
+      // VR price per game = price per person
+      return await PriceCalculator.vr();
+    } else {
+      // Simulator: 1 game per person
+      return await PriceCalculator.carSimulator();
+    }
+  }
+
   /// Calculate price for extending time on an active session
   /// Uses the same pricing logic as new bookings
   static Future<double> calculateTimeExtensionPrice({
@@ -154,7 +176,7 @@ class BookingLogicService {
               'sessionData': sessionData,
               'service': service,
             });
-            break; // Only add session once even if multiple services match
+            break; // Only add session once
           }
         }
       }
@@ -166,7 +188,7 @@ class BookingLogicService {
     }
   }
 
-  /// Check if a time slot conflicts with existing bookings or active sessions
+  /// Check if a time slot has conflicts with existing bookings or active sessions
   static Future<bool> hasTimeConflict({
     required String deviceType,
     required String date,
@@ -174,147 +196,114 @@ class BookingLogicService {
     required double durationHours,
   }) async {
     try {
-      final dateId = date; // Assuming date is already in yyyy-MM-dd format
-      final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final isPastDate = dateId.compareTo(todayId) < 0;
-
-      // Parse time slot
+      // Parse time slot (format: "HH:MM")
       final timeParts = timeSlot.split(':');
-      if (timeParts.length < 2) return false;
-      final selectedHour = int.tryParse(timeParts[0]) ?? 0;
-      final selectedMinute = int.tryParse(timeParts[1]) ?? 0;
-      final selectedStartDecimal = selectedHour + (selectedMinute / 60.0);
-      final selectedEndDecimal = selectedStartDecimal + durationHours;
+      if (timeParts.length != 2) {
+        debugPrint('Invalid time slot format: $timeSlot');
+        return false;
+      }
 
-      // Check bookings collection (for today and future dates)
-      if (!isPastDate) {
-        final bookings = await _firestore
-            .collection('bookings')
-            .where('date', isEqualTo: dateId)
-            .where('serviceType', isEqualTo: deviceType)
-            .get();
+      final startHour = int.tryParse(timeParts[0]) ?? 0;
+      final startMinute = int.tryParse(timeParts[1]) ?? 0;
+      final startDecimal = startHour + (startMinute / 60.0);
+      final endDecimal = startDecimal + durationHours;
 
-        for (var doc in bookings.docs) {
-          final data = doc.data();
-          final status = (data['status'] as String? ?? 'pending').toLowerCase();
-          if (status == 'cancelled') continue;
+      // Check bookings collection
+      final bookingsSnapshot = await _firestore
+          .collection('bookings')
+          .where('date', isEqualTo: date)
+          .where('serviceType', isEqualTo: deviceType)
+          .get();
 
-          final bookedTimeSlot = data['timeSlot'] as String? ?? '';
-          if (bookedTimeSlot.isEmpty) continue;
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        if (status == 'cancelled') continue;
 
-          final bookedParts = bookedTimeSlot.split(':');
-          final bookedHour = bookedParts.length == 2
-              ? int.tryParse(bookedParts[0]) ?? 0
-              : 0;
-          final bookedMinute = bookedParts.length == 2
-              ? int.tryParse(bookedParts[1]) ?? 0
-              : 0;
-          final bookedDuration =
-              (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final bookingTimeSlot = data['timeSlot'] as String? ?? '';
+        if (bookingTimeSlot.isEmpty) continue;
 
-          final bookedStartDecimal = bookedHour + (bookedMinute / 60.0);
-          final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+        final bookingTimeParts = bookingTimeSlot.split(':');
+        if (bookingTimeParts.length != 2) continue;
 
-          // Check for overlap
-          if ((selectedStartDecimal >= bookedStartDecimal &&
-                  selectedStartDecimal < bookedEndDecimal) ||
-              (selectedEndDecimal > bookedStartDecimal &&
-                  selectedEndDecimal <= bookedEndDecimal) ||
-              (selectedStartDecimal <= bookedStartDecimal &&
-                  selectedEndDecimal >= bookedEndDecimal)) {
-            return true; // Conflict found
-          }
+        final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+        final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+        final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+        final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+        // Check for overlap
+        if ((startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal)) {
+          return true; // Conflict found
         }
       }
 
-      // Check active sessions (for any date, as sessions can span dates)
-      final activeSessions = await _firestore
+      // Check active sessions
+      final activeSessionsSnapshot = await _firestore
           .collection('active_sessions')
           .where('status', isEqualTo: 'active')
           .get();
 
-      for (var sessionDoc in activeSessions.docs) {
+      for (var sessionDoc in activeSessionsSnapshot.docs) {
         final sessionData = sessionDoc.data();
-        final services = List<Map<String, dynamic>>.from(
-          sessionData['services'] ?? [],
-        );
+        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
 
         for (var service in services) {
           final serviceType = service['type'] as String? ?? '';
           if (serviceType != deviceType) continue;
 
-          final startTimeStr = service['startTime'] as String?;
-          if (startTimeStr == null) continue;
+          final startTimeStr = service['startTime'] as String? ?? '';
+          if (startTimeStr.isEmpty) continue;
 
           try {
             final startTime = DateTime.parse(startTimeStr);
             final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
-            
-            // Only check conflicts for the same date
-            if (serviceDateId != dateId) continue;
+            if (serviceDateId != date) continue;
 
             final hours = (service['hours'] as num?)?.toInt() ?? 0;
             final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-            final serviceDuration = hours + (minutes / 60.0);
+            final serviceDurationHours = hours + (minutes / 60.0);
 
-            final serviceStartDecimal =
-                startTime.hour + (startTime.minute / 60.0);
-            final serviceEndDecimal = serviceStartDecimal + serviceDuration;
+            final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+            final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
 
             // Check for overlap
-            if ((selectedStartDecimal >= serviceStartDecimal &&
-                    selectedStartDecimal < serviceEndDecimal) ||
-                (selectedEndDecimal > serviceStartDecimal &&
-                    selectedEndDecimal <= serviceEndDecimal) ||
-                (selectedStartDecimal <= serviceStartDecimal &&
-                    selectedEndDecimal >= serviceEndDecimal)) {
+            if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
               return true; // Conflict found
             }
           } catch (e) {
-            debugPrint('Error parsing service start time: $e');
+            debugPrint('Error parsing session time: $e');
             continue;
           }
         }
       }
 
-      return false; // No conflict
+      return false; // No conflicts
     } catch (e) {
       debugPrint('Error checking time conflict: $e');
-      return false; // Assume no conflict on error
+      return false; // On error, assume no conflict
     }
   }
 
-  /// Validate booking data before creation
+  /// Validate booking data
   static void validateBookingData({
-    required String deviceType,
-    required int hours,
-    required int minutes,
     required String customerName,
-    required String timeSlot,
-    int? people, // For Theatre
+    String? phoneNumber,
+    required String serviceType,
   }) {
-    if (deviceType.isEmpty) {
-      throw Exception('Device type is required');
-    }
     if (customerName.trim().isEmpty) {
       throw Exception('Customer name is required');
     }
-    if (timeSlot.isEmpty) {
-      throw Exception('Time slot is required');
-    }
-    if (hours < 0 || minutes < 0) {
-      throw Exception('Duration must be positive');
-    }
-    if (hours == 0 && minutes == 0) {
-      throw Exception('Duration must be greater than 0');
+
+    if (customerName.trim().length < 2) {
+      throw Exception('Customer name must be at least 2 characters');
     }
 
-    // Device-specific validations
-    if (deviceType == 'Theatre') {
-      if (people == null || people <= 0) {
-        throw Exception('Number of people must be greater than 0 for Theatre');
+    if (phoneNumber != null && phoneNumber.isNotEmpty) {
+      final phoneDigits = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+        throw Exception('Phone number must be 7-15 digits');
       }
     }
   }
 }
-

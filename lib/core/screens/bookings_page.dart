@@ -2550,11 +2550,16 @@ class _BookingsPageState extends State<BookingsPage>
                 return const Center(child: CircularProgressIndicator());
               }
 
-              // Also get archived bookings
-              return FutureBuilder<QuerySnapshot>(
-                future:
-                    _firestore.collection('booking_history').limit(100).get(),
+              // Also get archived bookings - use StreamBuilder for real-time updates
+              return StreamBuilder<QuerySnapshot>(
+                stream:
+                    _firestore.collection('booking_history').limit(100).snapshots(),
                 builder: (context, archiveSnapshot) {
+                  // Show loading if archive stream is still loading
+                  if (archiveSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
                   // Combine done bookings and archived bookings
                   // Track which collection each booking came from
                   List<Map<String, dynamic>> allBookings = [];
