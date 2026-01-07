@@ -196,7 +196,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       // Check active sessions (for today/future dates)
       if (!isPastDate) {
         final activeSessionsSnapshot =
-            await _firestore.collection('active_sessions').where('status', isEqualTo: 'active').get();
+            await _firestore
+                .collection('active_sessions')
+                .where('status', isEqualTo: 'active')
+                .get();
 
         for (var sessionDoc in activeSessionsSnapshot.docs) {
           final sessionData = sessionDoc.data();

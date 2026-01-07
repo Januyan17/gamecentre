@@ -892,7 +892,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
                       for (var sessionDoc in historySessionsSnapshot.docs) {
                         final sessionData = sessionDoc.data();
-                        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+                        final services = List<Map<String, dynamic>>.from(
+                          sessionData['services'] ?? [],
+                        );
 
                         for (var service in services) {
                           final serviceTypeFromSession = service['type'] as String? ?? '';
@@ -944,7 +946,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
                     for (var sessionDoc in historySessionsSnapshot.docs) {
                       final sessionData = sessionDoc.data();
-                      final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+                      final services = List<Map<String, dynamic>>.from(
+                        sessionData['services'] ?? [],
+                      );
 
                       for (var service in services) {
                         final serviceTypeFromSession = service['type'] as String? ?? '';
@@ -2558,6 +2562,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
             final customerName = sessionData['customerName'] as String? ?? 'Customer';
             final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
             final totalAmount = (sessionData['totalAmount'] ?? 0).toDouble();
+            final discount = (sessionData['discount'] ?? 0).toDouble();
+            final finalAmount = (sessionData['finalAmount'] ?? totalAmount).toDouble();
+            final hasDiscount = discount > 0;
             final startTime = (sessionData['startTime'] as Timestamp?)?.toDate();
 
             // Get primary device type from first service or deviceType field
@@ -2615,8 +2622,39 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
+                          // Show final amount (with discount if applied)
+                          if (hasDiscount) ...[
+                            // Original amount with strikethrough
+                            Text(
+                              'Rs ${totalAmount.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                decoration: TextDecoration.lineThrough,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            // Discount badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '-Rs ${discount.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                          ],
+                          // Final amount (or total if no discount)
                           Text(
-                            'Rs ${totalAmount.toStringAsFixed(2)}',
+                            'Rs ${finalAmount.toStringAsFixed(2)}',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
