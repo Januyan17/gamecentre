@@ -238,43 +238,145 @@ class BookingLogicService {
         }
       }
 
-      // Check active sessions
-      final activeSessionsSnapshot = await _firestore
-          .collection('active_sessions')
-          .where('status', isEqualTo: 'active')
-          .get();
+      // Check if date is in the past
+      final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final isPastDate = date.compareTo(todayId) < 0;
 
-      for (var sessionDoc in activeSessionsSnapshot.docs) {
-        final sessionData = sessionDoc.data();
-        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+      // Check active sessions (for today/future dates)
+      if (!isPastDate) {
+        final activeSessionsSnapshot = await _firestore
+            .collection('active_sessions')
+            .where('status', isEqualTo: 'active')
+            .get();
 
-        for (var service in services) {
-          final serviceType = service['type'] as String? ?? '';
-          if (serviceType != deviceType) continue;
+        for (var sessionDoc in activeSessionsSnapshot.docs) {
+          final sessionData = sessionDoc.data();
+          final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
 
-          final startTimeStr = service['startTime'] as String? ?? '';
-          if (startTimeStr.isEmpty) continue;
+          for (var service in services) {
+            final serviceType = service['type'] as String? ?? '';
+            if (serviceType != deviceType) continue;
 
-          try {
-            final startTime = DateTime.parse(startTimeStr);
-            final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
-            if (serviceDateId != date) continue;
+            final startTimeStr = service['startTime'] as String? ?? '';
+            if (startTimeStr.isEmpty) continue;
 
-            final hours = (service['hours'] as num?)?.toInt() ?? 0;
-            final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-            final serviceDurationHours = hours + (minutes / 60.0);
+            try {
+              final startTime = DateTime.parse(startTimeStr);
+              final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+              if (serviceDateId != date) continue;
 
-            final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-            final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+              final hours = (service['hours'] as num?)?.toInt() ?? 0;
+              final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+              final serviceDurationHours = hours + (minutes / 60.0);
 
-            // Check for overlap
-            if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
-              return true; // Conflict found
+              final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+              final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+              // Check for overlap
+              if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                return true; // Conflict found
+              }
+            } catch (e) {
+              debugPrint('Error parsing session time: $e');
+              continue;
             }
-          } catch (e) {
-            debugPrint('Error parsing session time: $e');
-            continue;
           }
+        }
+
+        // Also check closed sessions for today's date
+        // This ensures completed sessions today remain marked as unavailable
+        try {
+          if (date == todayId) {
+            final historySessionsSnapshot = await _firestore
+                .collection('days')
+                .doc(date)
+                .collection('sessions')
+                .where('status', isEqualTo: 'closed')
+                .get();
+
+            for (var sessionDoc in historySessionsSnapshot.docs) {
+              final sessionData = sessionDoc.data();
+              final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+              for (var service in services) {
+                final serviceType = service['type'] as String? ?? '';
+                if (serviceType != deviceType) continue;
+
+                final startTimeStr = service['startTime'] as String? ?? '';
+                if (startTimeStr.isEmpty) continue;
+
+                try {
+                  final startTime = DateTime.parse(startTimeStr);
+                  final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                  if (serviceDateId != date) continue;
+
+                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                  final serviceDurationHours = hours + (minutes / 60.0);
+
+                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                  final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+                  // Check for overlap
+                  if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                    return true; // Conflict found
+                  }
+                } catch (e) {
+                  debugPrint('Error parsing closed session time: $e');
+                  continue;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking closed sessions for today: $e');
+        }
+      } else {
+        // For past dates, also check history sessions (closed/ended sessions)
+        // This ensures past bookings remain marked as unavailable for historical tracking
+        try {
+          final historySessionsSnapshot = await _firestore
+              .collection('days')
+              .doc(date)
+              .collection('sessions')
+              .where('status', isEqualTo: 'closed')
+              .get();
+
+          for (var sessionDoc in historySessionsSnapshot.docs) {
+            final sessionData = sessionDoc.data();
+            final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+            for (var service in services) {
+              final serviceType = service['type'] as String? ?? '';
+              if (serviceType != deviceType) continue;
+
+              final startTimeStr = service['startTime'] as String? ?? '';
+              if (startTimeStr.isEmpty) continue;
+
+              try {
+                final startTime = DateTime.parse(startTimeStr);
+                final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                if (serviceDateId != date) continue;
+
+                final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                final serviceDurationHours = hours + (minutes / 60.0);
+
+                final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+                // Check for overlap
+                if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                  return true; // Conflict found
+                }
+              } catch (e) {
+                debugPrint('Error parsing history session time: $e');
+                continue;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking history sessions: $e');
         }
       }
 

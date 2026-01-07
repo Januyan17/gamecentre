@@ -186,7 +186,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         }
       }
 
-      // Also check active sessions (only for today/future dates)
+      // Check active sessions (for today/future dates)
       if (!isPastDate) {
         final activeSessionsSnapshot =
             await _firestore
@@ -229,6 +229,111 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
               debugPrint('Error parsing session start time: $e');
             }
           }
+        }
+
+        // Also check closed sessions for today's date
+        // This ensures completed sessions today remain marked as unavailable
+        try {
+          final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
+          if (dateId == todayId) {
+            final historySessionsSnapshot =
+                await _firestore
+                    .collection('days')
+                    .doc(dateId)
+                    .collection('sessions')
+                    .where('status', isEqualTo: 'closed')
+                    .get();
+
+            for (var sessionDoc in historySessionsSnapshot.docs) {
+              final sessionData = sessionDoc.data();
+              final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+              for (var service in services) {
+                final serviceTypeFromSession = service['type'] as String? ?? '';
+                if (serviceTypeFromSession != serviceType) continue;
+
+                final startTimeStr = service['startTime'] as String? ?? '';
+                if (startTimeStr.isEmpty) continue;
+
+                try {
+                  final startTime = DateTime.parse(startTimeStr);
+                  final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                  if (serviceDateId != dateId) continue;
+
+                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                  final durationHours = hours + (minutes / 60.0);
+
+                  final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                  final endDecimal = startDecimal + durationHours;
+
+                  // Mark all affected time slots
+                  for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                    final slotHour = hour.floor();
+                    final slotMinute = ((hour - slotHour) * 60).round();
+                    final slotStr =
+                        '${slotHour.toString().padLeft(2, '0')}:${slotMinute.toString().padLeft(2, '0')}';
+                    bookedSlots.add(slotStr);
+                  }
+                } catch (e) {
+                  debugPrint('Error parsing closed session start time: $e');
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking closed sessions for today: $e');
+        }
+      } else {
+        // For past dates, also check history sessions (closed/ended sessions)
+        // This ensures past bookings remain marked as unavailable for historical tracking
+        try {
+          final historySessionsSnapshot =
+              await _firestore
+                  .collection('days')
+                  .doc(dateId)
+                  .collection('sessions')
+                  .where('status', isEqualTo: 'closed')
+                  .get();
+
+          for (var sessionDoc in historySessionsSnapshot.docs) {
+            final sessionData = sessionDoc.data();
+            final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+            for (var service in services) {
+              final serviceTypeFromSession = service['type'] as String? ?? '';
+              if (serviceTypeFromSession != serviceType) continue;
+
+              final startTimeStr = service['startTime'] as String? ?? '';
+              if (startTimeStr.isEmpty) continue;
+
+              try {
+                final startTime = DateTime.parse(startTimeStr);
+                final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                if (serviceDateId != dateId) continue;
+
+                final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                final durationHours = hours + (minutes / 60.0);
+
+                final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                final endDecimal = startDecimal + durationHours;
+
+                // Mark all affected time slots
+                for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                  final slotHour = hour.floor();
+                  final slotMinute = ((hour - slotHour) * 60).round();
+                  final slotStr =
+                      '${slotHour.toString().padLeft(2, '0')}:${slotMinute.toString().padLeft(2, '0')}';
+                  bookedSlots.add(slotStr);
+                }
+              } catch (e) {
+                debugPrint('Error parsing history session start time: $e');
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking history sessions: $e');
         }
       }
 
@@ -723,6 +828,159 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         newBookedSlots.add(slot12Hour);
                       }
                     }
+                  }
+                }
+
+                // Also check sessions (active for today/future, history for past dates)
+                if (!isPastDate) {
+                  // Check active sessions for today/future dates
+                  final activeSessionsSnapshot =
+                      await _firestore
+                          .collection('active_sessions')
+                          .where('status', isEqualTo: 'active')
+                          .get();
+
+                  for (var sessionDoc in activeSessionsSnapshot.docs) {
+                    final sessionData = sessionDoc.data();
+                    final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+                    for (var service in services) {
+                      final serviceTypeFromSession = service['type'] as String? ?? '';
+                      if (serviceTypeFromSession != serviceType) continue;
+
+                      final startTimeStr = service['startTime'] as String? ?? '';
+                      if (startTimeStr.isEmpty) continue;
+
+                      try {
+                        final startTime = DateTime.parse(startTimeStr);
+                        final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                        if (serviceDateId != dateId) continue;
+
+                        final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                        final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                        final durationHours = hours + (minutes / 60.0);
+
+                        final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                        final endDecimal = startDecimal + durationHours;
+
+                        // Mark all affected time slots (convert to 12-hour format)
+                        for (double hour = startDecimal; hour < endDecimal; hour += 1.0) {
+                          final slotHour = hour.floor();
+                          if (slotHour <= 23) {
+                            final slot24Hour = '${slotHour.toString().padLeft(2, '0')}:00';
+                            final slot12Hour = _formatTime12Hour(slot24Hour);
+                            newBookedSlots.add(slot12Hour);
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Error parsing session start time: $e');
+                      }
+                    }
+                  }
+
+                  // Also check closed sessions for today's date
+                  // This ensures completed sessions today remain marked as unavailable
+                  try {
+                    if (dateId == todayId) {
+                      final historySessionsSnapshot =
+                          await _firestore
+                              .collection('days')
+                              .doc(dateId)
+                              .collection('sessions')
+                              .where('status', isEqualTo: 'closed')
+                              .get();
+
+                      for (var sessionDoc in historySessionsSnapshot.docs) {
+                        final sessionData = sessionDoc.data();
+                        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+                        for (var service in services) {
+                          final serviceTypeFromSession = service['type'] as String? ?? '';
+                          if (serviceTypeFromSession != serviceType) continue;
+
+                          final startTimeStr = service['startTime'] as String? ?? '';
+                          if (startTimeStr.isEmpty) continue;
+
+                          try {
+                            final startTime = DateTime.parse(startTimeStr);
+                            final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                            if (serviceDateId != dateId) continue;
+
+                            final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                            final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                            final durationHours = hours + (minutes / 60.0);
+
+                            final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                            final endDecimal = startDecimal + durationHours;
+
+                            // Mark all affected time slots (convert to 12-hour format)
+                            for (double hour = startDecimal; hour < endDecimal; hour += 1.0) {
+                              final slotHour = hour.floor();
+                              if (slotHour <= 23) {
+                                final slot24Hour = '${slotHour.toString().padLeft(2, '0')}:00';
+                                final slot12Hour = _formatTime12Hour(slot24Hour);
+                                newBookedSlots.add(slot12Hour);
+                              }
+                            }
+                          } catch (e) {
+                            debugPrint('Error parsing closed session start time: $e');
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Error checking closed sessions for today: $e');
+                  }
+                } else {
+                  // For past dates, also check history sessions (closed/ended sessions)
+                  try {
+                    final historySessionsSnapshot =
+                        await _firestore
+                            .collection('days')
+                            .doc(dateId)
+                            .collection('sessions')
+                            .where('status', isEqualTo: 'closed')
+                            .get();
+
+                    for (var sessionDoc in historySessionsSnapshot.docs) {
+                      final sessionData = sessionDoc.data();
+                      final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+
+                      for (var service in services) {
+                        final serviceTypeFromSession = service['type'] as String? ?? '';
+                        if (serviceTypeFromSession != serviceType) continue;
+
+                        final startTimeStr = service['startTime'] as String? ?? '';
+                        if (startTimeStr.isEmpty) continue;
+
+                        try {
+                          final startTime = DateTime.parse(startTimeStr);
+                          final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                          if (serviceDateId != dateId) continue;
+
+                          final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                          final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                          final durationHours = hours + (minutes / 60.0);
+
+                          final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                          final endDecimal = startDecimal + durationHours;
+
+                          // Mark all affected time slots (convert to 12-hour format)
+                          for (double hour = startDecimal; hour < endDecimal; hour += 1.0) {
+                            final slotHour = hour.floor();
+                            if (slotHour <= 23) {
+                              final slot24Hour = '${slotHour.toString().padLeft(2, '0')}:00';
+                              final slot12Hour = _formatTime12Hour(slot24Hour);
+                              newBookedSlots.add(slot12Hour);
+                            }
+                          }
+                        } catch (e) {
+                          debugPrint('Error parsing history session start time: $e');
+                        }
+                      }
+                    }
+                  } catch (e) {
+                    debugPrint('Error checking history sessions: $e');
                   }
                 }
 
