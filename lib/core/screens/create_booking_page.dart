@@ -24,6 +24,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   bool _useCustomTime = false;
   TimeOfDay? _customTime;
 
+  // Selected date for booking
+  late DateTime _selectedDate;
+
   // PS4/PS5 fields
   int _consoleCount = 1;
   int _durationHours = 1;
@@ -54,6 +57,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   @override
   void initState() {
     super.initState();
+    _selectedDate = widget.selectedDate;
     _selectedServiceType = widget.serviceType ?? 'PS5';
     _calculatePrice();
     _loadBookedTimeSlots();
@@ -144,7 +148,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     if (_selectedServiceType == null) return;
 
     try {
-      final dateId = DateFormat('yyyy-MM-dd').format(widget.selectedDate);
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
 
       // Get all bookings for this date and service type
       final bookingsSnapshot =
@@ -300,13 +304,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     // Validate customer information
     final customerName = _nameController.text.trim();
     final phoneNumber = _phoneController.text.trim();
-    
+
     if (customerName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter customer name'),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text('Please enter customer name'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -338,20 +339,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     // Validate time slot
     if (_selectedTimeSlot == null && !_useCustomTime) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a time slot'),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text('Please select a time slot'), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (_useCustomTime && _customTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a custom time'),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text('Please select a custom time'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -364,11 +359,12 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     );
 
     try {
-      final dateId = DateFormat('yyyy-MM-dd').format(widget.selectedDate);
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
       String timeSlot24Hour;
       if (_useCustomTime && _customTime != null) {
         // Custom time is already in 24-hour format
-        timeSlot24Hour = '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}';
+        timeSlot24Hour =
+            '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}';
       } else {
         // Convert selected time slot from 12-hour to 24-hour format
         timeSlot24Hour = _formatTime24Hour(_selectedTimeSlot!);
@@ -378,10 +374,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       double durationHours = 1.0;
       if (_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') {
         durationHours = _durationHours + (_minutes / 60.0);
-        } else if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
-          // 1 game per person, 5 minutes per game
-          final totalGames = _numberOfPeople;
-          durationHours = (totalGames * 5) / 60.0;
+      } else if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+        // 1 game per person, 5 minutes per game
+        final totalGames = _numberOfPeople;
+        durationHours = (totalGames * 5) / 60.0;
       } else if (_selectedServiceType == 'Theatre') {
         durationHours = _theatreHours.toDouble();
       }
@@ -463,7 +459,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     setState(() {
       _selectedServiceType = type;
       _selectedTimeSlot = null; // Reset time slot when applying scenario
-      
+
       if (type == 'PS5' || type == 'PS4') {
         _consoleCount = count;
         _durationHours = hours;
@@ -476,7 +472,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         _theatreHours = hours;
         _theatrePeople = count; // Use count as number of people for Theatre
       }
-      
+
       // Reset price calculation flag to force recalculation
       _priceCalculated = false;
       _calculatedPrice = 0.0;
@@ -728,6 +724,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Date Selection
+                  _buildDateSection(),
+
+                  const SizedBox(height: 24),
+
                   // Customer Information
                   _buildCustomerInfoSection(),
 
@@ -788,6 +789,80 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDateSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Booking Date', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        InkWell(
+          onTap: () async {
+            final now = DateTime.now();
+            final maxDate = now.add(const Duration(days: 30));
+
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: _selectedDate,
+              firstDate: now,
+              lastDate: maxDate,
+              selectableDayPredicate: (date) {
+                return date.isAfter(now.subtract(const Duration(days: 1))) &&
+                    date.isBefore(maxDate.add(const Duration(days: 1)));
+              },
+            );
+
+            if (picked != null && picked != _selectedDate) {
+              setState(() {
+                _selectedDate = picked;
+                _selectedTimeSlot = null; // Clear time slot when date changes
+              });
+              _loadBookedTimeSlots(); // Reload booked slots for new date
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.purple.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.purple.shade300, width: 1),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, color: Colors.purple.shade700, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Selected Date',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.purple.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat('EEEE, MMMM dd, yyyy').format(_selectedDate),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down, color: Colors.purple.shade700, size: 24),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1233,9 +1308,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       '22:30',
       '23:00',
     ];
-    
+
     // Convert to 12-hour format for display
-    final List<String> _timeSlots = _timeSlots24Hour.map((slot) => _formatTime12Hour(slot)).toList();
+    final List<String> _timeSlots =
+        _timeSlots24Hour.map((slot) => _formatTime12Hour(slot)).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1386,8 +1462,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Number of people:', style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
-                        Text('$_numberOfPeople', style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+                        Text(
+                          'Number of people:',
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                        ),
+                        Text(
+                          '$_numberOfPeople',
+                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                        ),
                       ],
                     ),
                     const Divider(height: 24),
