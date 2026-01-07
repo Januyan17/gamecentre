@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/session_provider.dart';
 import '../services/price_calculator.dart';
+import '../services/session_service.dart';
+import 'session_detail_page.dart';
 
 class DeviceSelectionPage extends StatefulWidget {
   const DeviceSelectionPage({super.key});
@@ -26,7 +28,9 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
     } catch (e) {
       // If order index doesn't exist, return stream without orderBy
       debugPrint('Order index not found, using stream without order: $e');
-      return FirebaseFirestore.instance.collection('common_scenarios').snapshots();
+      return FirebaseFirestore.instance
+          .collection('common_scenarios')
+          .snapshots();
     }
   }
 
@@ -54,7 +58,13 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
     );
   }
 
-  void _quickAdd(String type, int count, int hours, int minutes, int additionalControllers) async {
+  void _quickAdd(
+    String type,
+    int count,
+    int hours,
+    int minutes,
+    int additionalControllers,
+  ) async {
     // Calculate price for one device
     double singlePrice = 0.0;
     if (type == 'PS4') {
@@ -125,9 +135,9 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
   void _saveDevices() async {
     if (selectedDevices.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select at least one device')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one device')),
+      );
       return;
     }
 
@@ -165,12 +175,16 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
       if (mounted) {
         Navigator.pop(context); // Close loading
-        Navigator.pop(context); // Go back to previous page (SessionDetailPage or Dashboard)
+        Navigator.pop(
+          context,
+        ); // Go back to previous page (SessionDetailPage or Dashboard)
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${selectedDevices.length} device(s) added successfully'),
+            content: Text(
+              '${selectedDevices.length} device(s) added successfully',
+            ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -179,31 +193,33 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Close loading
-        
+
         // Extract error message
         String errorMessage = 'Error adding devices';
         final errorStr = e.toString();
-        
+
         if (errorStr.contains('conflicts with an existing booking')) {
           // Extract the detailed conflict message (handles multi-line)
-          final match = RegExp(r'This time slot conflicts with an existing booking\.\s*(.+)', dotAll: true).firstMatch(errorStr);
+          final match = RegExp(
+            r'This time slot conflicts with an existing booking\.\s*(.+)',
+            dotAll: true,
+          ).firstMatch(errorStr);
           if (match != null) {
             errorMessage = '⚠️ Booking Conflict\n\n${match.group(1)!.trim()}';
           } else {
-            errorMessage = '⚠️ This time slot conflicts with an existing booking.\nPlease choose a different time.';
+            errorMessage =
+                '⚠️ This time slot conflicts with an existing booking.\nPlease choose a different time.';
           }
         } else if (errorStr.contains('No active session')) {
           errorMessage = 'No active session. Please create a session first.';
         } else {
-          errorMessage = 'Error adding devices:\n${errorStr.replaceAll('Exception: ', '').trim()}';
+          errorMessage =
+              'Error adding devices:\n${errorStr.replaceAll('Exception: ', '').trim()}';
         }
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              errorMessage,
-              style: const TextStyle(fontSize: 14),
-            ),
+            content: Text(errorMessage, style: const TextStyle(fontSize: 14)),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -227,7 +243,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
           if (selectedDevices.isNotEmpty)
             TextButton(
               onPressed: _saveDevices,
-              child: const Text('Add Selected', style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Add Selected',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
         ],
       ),
@@ -256,8 +275,12 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                 // Sort manually if orderBy failed
                 try {
                   docs.sort((a, b) {
-                    final orderA = (a.data() as Map<String, dynamic>)['order'] as int? ?? 0;
-                    final orderB = (b.data() as Map<String, dynamic>)['order'] as int? ?? 0;
+                    final orderA =
+                        (a.data() as Map<String, dynamic>)['order'] as int? ??
+                        0;
+                    final orderB =
+                        (b.data() as Map<String, dynamic>)['order'] as int? ??
+                        0;
                     return orderA.compareTo(orderB);
                   });
                 } catch (e) {
@@ -273,7 +296,8 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         'count': data['count'] ?? 1,
                         'hours': data['hours'] ?? 1,
                         'minutes': data['minutes'] ?? 0,
-                        'additionalControllers': data['additionalControllers'] ?? 0,
+                        'additionalControllers':
+                            data['additionalControllers'] ?? 0,
                         'label': data['label'] ?? '',
                       };
                     }).toList();
@@ -285,7 +309,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(12),
@@ -298,7 +325,11 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.flash_on, size: 18, color: Colors.blue.shade700),
+                        Icon(
+                          Icons.flash_on,
+                          size: 18,
+                          color: Colors.blue.shade700,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Quick Add',
@@ -317,15 +348,21 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                       children:
                           scenarios.map((scenario) {
                             final type = scenario['type'] as String? ?? 'PS5';
-                            final count = (scenario['count'] as num?)?.toInt() ?? 1;
-                            final hours = (scenario['hours'] as num?)?.toInt() ?? 1;
-                            final minutes = (scenario['minutes'] as num?)?.toInt() ?? 0;
+                            final count =
+                                (scenario['count'] as num?)?.toInt() ?? 1;
+                            final hours =
+                                (scenario['hours'] as num?)?.toInt() ?? 1;
+                            final minutes =
+                                (scenario['minutes'] as num?)?.toInt() ?? 0;
                             final additionalControllers =
-                                (scenario['additionalControllers'] as num?)?.toInt() ?? 0;
+                                (scenario['additionalControllers'] as num?)
+                                    ?.toInt() ??
+                                0;
                             final label =
                                 scenario['label'] as String? ??
                                 '$count $type${hours > 0 ? ' ${hours}h' : ''}${additionalControllers > 0 ? ' Multi' : ''}';
-                            final color = type == 'PS5' ? Colors.blue : Colors.purple;
+                            final color =
+                                type == 'PS5' ? Colors.blue : Colors.purple;
 
                             return Material(
                               color: Colors.transparent,
@@ -340,7 +377,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                                     ),
                                 borderRadius: BorderRadius.circular(8),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: color,
                                     borderRadius: BorderRadius.circular(8),
@@ -390,6 +430,11 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
 
           const Divider(),
 
+          // Quick Access: Active Sessions
+          _QuickAccessSection(),
+
+          const Divider(),
+
           // Device selection buttons
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -404,7 +449,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         icon: const Icon(Icons.sports_esports),
                         label: const Text('Add PS4'),
                         style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
                           backgroundColor: Colors.purple,
                           foregroundColor: Colors.white,
                         ),
@@ -417,7 +465,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         icon: const Icon(Icons.sports_esports),
                         label: const Text('Add PS5'),
                         style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
                         ),
@@ -449,7 +500,8 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         final hours = device['hours'] as int;
                         final minutes = device['minutes'] as int;
                         final price = device['price'] as double;
-                        final additionalControllers = device['additionalControllers'] as int? ?? 0;
+                        final additionalControllers =
+                            device['additionalControllers'] as int? ?? 0;
 
                         // Format time display
                         String timeDisplay = '';
@@ -462,11 +514,16 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                         }
 
                         return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           child: ListTile(
                             leading: CircleAvatar(
                               backgroundColor:
-                                  device['type'] == 'PS5' ? Colors.blue : Colors.purple,
+                                  device['type'] == 'PS5'
+                                      ? Colors.blue
+                                      : Colors.purple,
                               child: Text(
                                 device['type'],
                                 style: const TextStyle(
@@ -478,7 +535,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                             ),
                             title: Text(
                               '${device['type']} Console',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,7 +579,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                                   tooltip: 'Edit',
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
+                                  ),
                                   onPressed: () => _removeDevice(index),
                                   tooltip: 'Remove',
                                 ),
@@ -547,7 +610,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                     children: [
                       const Text(
                         'Total:',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Text(
                         'Rs ${selectedDevices.fold<double>(0, (sum, device) => sum + (device['price'] as double)).toStringAsFixed(2)}',
@@ -568,7 +634,10 @@ class _DeviceSelectionPageState extends State<DeviceSelectionPage> {
                       icon: const Icon(Icons.check_circle, size: 24),
                       label: Text(
                         'Add ${selectedDevices.length} Device${selectedDevices.length != 1 ? 's' : ''} to Session',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -591,7 +660,13 @@ class _TimeCalculatorDialog extends StatefulWidget {
   final int? initialHours;
   final int? initialMinutes;
   final int? initialAdditionalControllers;
-  final Function(int hours, int minutes, double price, int additionalControllers) onConfirm;
+  final Function(
+    int hours,
+    int minutes,
+    double price,
+    int additionalControllers,
+  )
+  onConfirm;
 
   const _TimeCalculatorDialog({
     required this.deviceType,
@@ -624,7 +699,8 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
     minutes = widget.initialMinutes ?? 0;
     additionalControllers = widget.initialAdditionalControllers ?? 0;
     // Enable additional controllers if initial value is greater than 0
-    enableAdditionalControllers = (widget.initialAdditionalControllers ?? 0) > 0;
+    enableAdditionalControllers =
+        (widget.initialAdditionalControllers ?? 0) > 0;
     _fetchControllerPrice();
     _calculatePrice();
   }
@@ -659,10 +735,12 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
 
     // Calculate breakdown
     psChargesForHours = (hours * deviceHourlyRate).toDouble();
-    controllerChargesForHours = (hours * additionalControllers * controllerPrice).toDouble();
+    controllerChargesForHours =
+        (hours * additionalControllers * controllerPrice).toDouble();
 
     // Calculate additional minutes
-    double baseHourlyRate = deviceHourlyRate + (additionalControllers * controllerPrice);
+    double baseHourlyRate =
+        deviceHourlyRate + (additionalControllers * controllerPrice);
     additionalMinutesPrice = 0.0;
     if (minutes > 0) {
       additionalMinutesPrice = (baseHourlyRate / 2) * (minutes / 30.0);
@@ -715,7 +793,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                         ),
                         Text(
                           '$hours',
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         IconButton(
                           icon: const Icon(Icons.add_circle_outline),
@@ -750,7 +831,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                         ),
                         Text(
                           '$minutes',
-                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         IconButton(
                           icon: const Icon(Icons.add_circle_outline),
@@ -787,7 +871,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                     children: [
                       const Text(
                         'Additional Controllers',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Switch(
                         value: enableAdditionalControllers,
@@ -842,7 +929,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                           alignment: Alignment.center,
                           child: Text(
                             '$additionalControllers',
-                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -873,7 +963,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                   // Total Time
                   Text(
                     'Total Time: ${hours}h ${minutes}m',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   // Detailed Breakdown
@@ -898,7 +991,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                         const SizedBox(width: 8),
                         Text(
                           'Rs ${psChargesForHours.toStringAsFixed(2)}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
@@ -912,7 +1008,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                         Flexible(
                           child: Text(
                             'Controller charges (${additionalControllers} × Rs ${controllerPrice.toStringAsFixed(0)} × ${hours}h):',
-                            style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade700,
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -938,7 +1037,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                         Flexible(
                           child: Text(
                             'Additional ${minutes}m (50% of hourly rate):',
-                            style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade700,
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -963,7 +1065,10 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
                     children: [
                       const Text(
                         'Total Price:',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       Text(
                         'Rs ${price.toStringAsFixed(2)}',
@@ -988,17 +1093,596 @@ class _TimeCalculatorDialogState extends State<_TimeCalculatorDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed:
               (hours == 0 && minutes == 0)
                   ? null
                   : () {
-                    widget.onConfirm(hours, minutes, price, additionalControllers);
+                    widget.onConfirm(
+                      hours,
+                      minutes,
+                      price,
+                      additionalControllers,
+                    );
                   },
           child: const Text('Add'),
         ),
       ],
     );
+  }
+}
+
+/// Quick Access Section - Shows active sessions for devices
+/// Allows quick navigation to view, extend, add controllers, or end session
+class _QuickAccessSection extends StatelessWidget {
+  const _QuickAccessSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream:
+          FirebaseFirestore.instance
+              .collection('active_sessions')
+              .where('status', isEqualTo: 'active')
+              .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        // Group sessions by device type
+        final Map<String, List<Map<String, dynamic>>> sessionsByDevice = {};
+
+        for (var doc in snapshot.data!.docs) {
+          final sessionData = doc.data() as Map<String, dynamic>;
+          final services = List<Map<String, dynamic>>.from(
+            sessionData['services'] ?? [],
+          );
+
+          for (var service in services) {
+            final deviceType = service['type'] as String? ?? '';
+            if (deviceType.isEmpty) continue;
+
+            if (!sessionsByDevice.containsKey(deviceType)) {
+              sessionsByDevice[deviceType] = [];
+            }
+
+            sessionsByDevice[deviceType]!.add({
+              'sessionId': doc.id,
+              'sessionData': sessionData,
+              'service': service,
+            });
+          }
+        }
+
+        if (sessionsByDevice.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.green.shade200, width: 1),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.flash_on, size: 18, color: Colors.green.shade700),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Quick Access - Active Sessions',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...sessionsByDevice.entries.map((entry) {
+                final deviceType = entry.key;
+                final sessions = entry.value;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _QuickAccessCard(
+                    deviceType: deviceType,
+                    sessions: sessions,
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _QuickAccessCard extends StatelessWidget {
+  final String deviceType;
+  final List<Map<String, dynamic>> sessions;
+
+  const _QuickAccessCard({required this.deviceType, required this.sessions});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = sessions.first; // Show first session for this device
+    final sessionData = session['sessionData'] as Map<String, dynamic>;
+    final service = session['service'] as Map<String, dynamic>;
+    final sessionId = session['sessionId'] as String;
+    final customerName = sessionData['customerName'] as String? ?? 'Customer';
+
+    // Calculate time remaining
+    String timeRemaining = '';
+    try {
+      final startTimeStr = service['startTime'] as String?;
+      if (startTimeStr != null) {
+        final startTime = DateTime.parse(startTimeStr);
+        final hours = (service['hours'] as num?)?.toInt() ?? 0;
+        final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+        final endTime = startTime.add(Duration(hours: hours, minutes: minutes));
+        final now = DateTime.now();
+        final remaining = endTime.difference(now);
+
+        if (remaining.isNegative) {
+          timeRemaining = 'Time expired';
+        } else {
+          final remainingHours = remaining.inHours;
+          final remainingMinutes = remaining.inMinutes % 60;
+          if (remainingHours > 0) {
+            timeRemaining = '${remainingHours}h ${remainingMinutes}m left';
+          } else {
+            timeRemaining = '${remainingMinutes}m left';
+          }
+        }
+      }
+    } catch (e) {
+      timeRemaining = 'Active';
+    }
+
+    Color deviceColor;
+    IconData deviceIcon;
+    switch (deviceType) {
+      case 'PS5':
+        deviceColor = Colors.blue;
+        deviceIcon = Icons.sports_esports;
+        break;
+      case 'PS4':
+        deviceColor = Colors.purple;
+        deviceIcon = Icons.videogame_asset;
+        break;
+      default:
+        deviceColor = Colors.grey;
+        deviceIcon = Icons.devices;
+    }
+
+    return Card(
+      elevation: 2,
+      child: InkWell(
+        onTap: () async {
+          // Load session and navigate to detail page
+          await context.read<SessionProvider>().loadSession(sessionId);
+          if (context.mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SessionDetailPage()),
+            );
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: deviceColor,
+                child: Icon(deviceIcon, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$deviceType - $customerName',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      timeRemaining,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Centralized utility class for converting bookings to active sessions.
+/// All common logic for booking → active session transition, price calculations,
+/// validation, and session duration handling is centralized here.
+class BookingToSessionConverter {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final SessionService _sessionService = SessionService();
+  static const Uuid _uuid = Uuid();
+
+  /// Converts a booking to an active session.
+  ///
+  /// This method:
+  /// 1. Creates a new active session with the customer name
+  /// 2. Converts booking data to service format
+  /// 3. Calculates prices using PriceCalculator (same logic as device_selection_page)
+  /// 4. Adds services to the session
+  /// 5. Removes the booking from the bookings collection
+  ///
+  /// Throws an exception if conversion fails.
+  static Future<String> convertBookingToActiveSession({
+    required String bookingId,
+    required Map<String, dynamic> bookingData,
+  }) async {
+    try {
+      // Extract booking information
+      final serviceType = bookingData['serviceType'] as String? ?? '';
+      final customerName = bookingData['customerName'] as String? ?? 'Customer';
+      final date = bookingData['date'] as String? ?? '';
+      final timeSlot = bookingData['timeSlot'] as String? ?? '';
+
+      if (serviceType.isEmpty) {
+        throw Exception('Service type is required');
+      }
+      if (customerName.isEmpty) {
+        throw Exception('Customer name is required');
+      }
+      if (timeSlot.isEmpty) {
+        throw Exception('Time slot is required');
+      }
+
+      // Parse time slot to create startTime
+      final startTime = _parseTimeSlotToDateTime(date, timeSlot);
+
+      // Create active session with booking reference
+      final sessionId = await _sessionService.createSession(customerName);
+
+      // Store booking reference and device info in session
+      await _firestore.collection('active_sessions').doc(sessionId).update({
+        'bookingId': bookingId,
+        'bookingDate': date,
+        'bookingTimeSlot': timeSlot,
+        'deviceType': serviceType, // Store primary device type for quick access
+      });
+
+      // Convert booking to service(s) based on service type
+      final services = await _convertBookingToServices(
+        bookingData: bookingData,
+        startTime: startTime,
+      );
+
+      // Add all services to the session
+      for (var service in services) {
+        await _sessionService.addService(sessionId, service);
+      }
+
+      // Save booking to history before deleting
+      final historyData = <String, dynamic>{
+        ...bookingData,
+        'status': 'converted_to_session',
+        'convertedAt': FieldValue.serverTimestamp(),
+        'sessionId': sessionId,
+        'originalBookingId': bookingId,
+      };
+
+      // Add to booking_history collection
+      await _firestore
+          .collection('booking_history')
+          .doc(bookingId)
+          .set(historyData);
+
+      // Remove booking from bookings collection
+      await _firestore.collection('bookings').doc(bookingId).delete();
+
+      return sessionId;
+    } catch (e) {
+      throw Exception(
+        'Failed to convert booking to active session: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Converts booking data to service format(s).
+  /// Handles all service types: PS4, PS5, VR, Simulator, Theatre.
+  /// Uses the same price calculation logic as device_selection_page.
+  static Future<List<Map<String, dynamic>>> _convertBookingToServices({
+    required Map<String, dynamic> bookingData,
+    required DateTime startTime,
+  }) async {
+    final serviceType = bookingData['serviceType'] as String? ?? '';
+    final services = <Map<String, dynamic>>[];
+
+    switch (serviceType) {
+      case 'PS4':
+      case 'PS5':
+        services.addAll(
+          await _convertConsoleBooking(
+            bookingData: bookingData,
+            startTime: startTime,
+            deviceType: serviceType,
+          ),
+        );
+        break;
+
+      case 'VR':
+        services.add(
+          await _convertVrBooking(
+            bookingData: bookingData,
+            startTime: startTime,
+          ),
+        );
+        break;
+
+      case 'Simulator':
+        services.add(
+          await _convertSimulatorBooking(
+            bookingData: bookingData,
+            startTime: startTime,
+          ),
+        );
+        break;
+
+      case 'Theatre':
+        services.add(
+          await _convertTheatreBooking(
+            bookingData: bookingData,
+            startTime: startTime,
+          ),
+        );
+        break;
+
+      default:
+        throw Exception('Unsupported service type: $serviceType');
+    }
+
+    return services;
+  }
+
+  /// Converts PS4/PS5 booking to service(s).
+  /// Handles multiple consoles (consoleCount).
+  /// Uses PriceCalculator.ps4Price() or ps5Price() for price calculation.
+  static Future<List<Map<String, dynamic>>> _convertConsoleBooking({
+    required Map<String, dynamic> bookingData,
+    required DateTime startTime,
+    required String deviceType,
+  }) async {
+    final durationHours =
+        (bookingData['durationHours'] as num?)?.toDouble() ?? 1.0;
+    final consoleCount = (bookingData['consoleCount'] as num?)?.toInt() ?? 1;
+
+    // Extract hours and minutes from duration
+    final hours = durationHours.floor();
+    final minutes = ((durationHours - hours) * 60).round();
+
+    // For now, we assume no additional controllers from booking
+    // This can be extended if bookings include controller information
+    final additionalControllers = 0;
+
+    // Calculate price using the same logic as device_selection_page
+    double price;
+    if (deviceType == 'PS4') {
+      price = await PriceCalculator.ps4Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
+    } else {
+      price = await PriceCalculator.ps5Price(
+        hours: hours,
+        minutes: minutes,
+        additionalControllers: additionalControllers,
+      );
+    }
+
+    // Create one service per console
+    final services = <Map<String, dynamic>>[];
+    for (int i = 0; i < consoleCount; i++) {
+      services.add({
+        'id': _uuid.v4(),
+        'type': deviceType,
+        'hours': hours,
+        'minutes': minutes,
+        'price': price,
+        'additionalControllers': additionalControllers,
+        'startTime': startTime.toIso8601String(),
+      });
+    }
+
+    return services;
+  }
+
+  /// Converts VR booking to service.
+  /// Uses PriceCalculator.vr() for price calculation.
+  static Future<Map<String, dynamic>> _convertVrBooking({
+    required Map<String, dynamic> bookingData,
+    required DateTime startTime,
+  }) async {
+    final durationMinutes =
+        (bookingData['durationMinutes'] as num?)?.toInt() ?? 30;
+
+    // Calculate games: 5 minutes per game
+    final games = (durationMinutes / 5).ceil();
+
+    // Calculate slots: 2 games per slot
+    final slots = (games / 2).ceil();
+
+    // Calculate price: VR price per slot
+    final pricePerSlot = await PriceCalculator.vr();
+    final price = pricePerSlot * slots;
+
+    return {
+      'id': _uuid.v4(),
+      'type': 'VR',
+      'slots': slots,
+      'games': games,
+      'price': price,
+      'startTime': startTime.toIso8601String(),
+    };
+  }
+
+  /// Converts Simulator booking to service.
+  /// Uses PriceCalculator.carSimulator() for price calculation.
+  static Future<Map<String, dynamic>> _convertSimulatorBooking({
+    required Map<String, dynamic> bookingData,
+    required DateTime startTime,
+  }) async {
+    final durationMinutes =
+        (bookingData['durationMinutes'] as num?)?.toInt() ?? 30;
+
+    // Calculate games: 5 minutes per game
+    final games = (durationMinutes / 5).ceil();
+
+    // Calculate price: Simulator price per game
+    final pricePerGame = await PriceCalculator.carSimulator();
+    final price = pricePerGame * games;
+
+    return {
+      'id': _uuid.v4(),
+      'type': 'Simulator',
+      'games': games,
+      'price': price,
+      'startTime': startTime.toIso8601String(),
+    };
+  }
+
+  /// Converts Theatre booking to service.
+  /// Uses PriceCalculator.theatre() for price calculation.
+  static Future<Map<String, dynamic>> _convertTheatreBooking({
+    required Map<String, dynamic> bookingData,
+    required DateTime startTime,
+  }) async {
+    final hours = (bookingData['hours'] as num?)?.toInt() ?? 1;
+    final people = (bookingData['totalPeople'] as num?)?.toInt() ?? 1;
+
+    // Calculate price using the same logic as device_selection_page
+    final price = await PriceCalculator.theatre(hours: hours, people: people);
+
+    return {
+      'id': _uuid.v4(),
+      'type': 'Theatre',
+      'hours': hours,
+      'people': people,
+      'price': price,
+      'startTime': startTime.toIso8601String(),
+    };
+  }
+
+  /// Parses date and timeSlot strings to a DateTime object.
+  static DateTime _parseTimeSlotToDateTime(String date, String timeSlot) {
+    try {
+      // Parse date (format: yyyy-MM-dd)
+      final dateParts = date.split('-');
+      if (dateParts.length != 3) {
+        throw Exception('Invalid date format: $date');
+      }
+
+      final year = int.parse(dateParts[0]);
+      final month = int.parse(dateParts[1]);
+      final day = int.parse(dateParts[2]);
+
+      // Parse timeSlot (format: HH:mm)
+      final timeParts = timeSlot.split(':');
+      if (timeParts.length < 2) {
+        throw Exception('Invalid time slot format: $timeSlot');
+      }
+
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      return DateTime(year, month, day, hour, minute);
+    } catch (e) {
+      // If parsing fails, use current time as fallback
+      debugPrint(
+        'Warning: Failed to parse booking time, using current time: $e',
+      );
+      return DateTime.now();
+    }
+  }
+
+  /// Validates booking data before conversion.
+  /// Returns true if booking is valid, throws exception otherwise.
+  static void validateBooking(Map<String, dynamic> bookingData) {
+    final serviceType = bookingData['serviceType'] as String? ?? '';
+    if (serviceType.isEmpty) {
+      throw Exception('Service type is required');
+    }
+
+    final customerName = bookingData['customerName'] as String? ?? '';
+    if (customerName.isEmpty) {
+      throw Exception('Customer name is required');
+    }
+
+    final timeSlot = bookingData['timeSlot'] as String? ?? '';
+    if (timeSlot.isEmpty) {
+      throw Exception('Time slot is required');
+    }
+
+    // Validate service-specific fields
+    switch (serviceType) {
+      case 'PS4':
+      case 'PS5':
+        final durationHours =
+            (bookingData['durationHours'] as num?)?.toDouble();
+        if (durationHours == null || durationHours <= 0) {
+          throw Exception('Duration hours must be greater than 0');
+        }
+        break;
+
+      case 'VR':
+      case 'Simulator':
+        final durationMinutes =
+            (bookingData['durationMinutes'] as num?)?.toInt();
+        if (durationMinutes == null || durationMinutes <= 0) {
+          throw Exception('Duration minutes must be greater than 0');
+        }
+        break;
+
+      case 'Theatre':
+        final hours = (bookingData['hours'] as num?)?.toInt();
+        if (hours == null || hours <= 0) {
+          throw Exception('Theatre hours must be greater than 0');
+        }
+        final people = (bookingData['totalPeople'] as num?)?.toInt();
+        if (people == null || people <= 0) {
+          throw Exception('Number of people must be greater than 0');
+        }
+        break;
+    }
   }
 }

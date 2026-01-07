@@ -3,6 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+import 'device_selection_page.dart';
+import '../providers/session_provider.dart';
+import '../services/booking_logic_service.dart';
+import 'session_detail_page.dart';
+import 'create_booking_page.dart';
 
 class BookingsPage extends StatefulWidget {
   const BookingsPage({super.key});
@@ -37,6 +43,12 @@ class _BookingsPageState extends State<BookingsPage>
     'Simulator',
     'Theatre',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
 
   // Helper function to convert 24-hour time string to 12-hour format
   String _formatTime12Hour(String time24Hour) {
@@ -89,11 +101,6 @@ class _BookingsPageState extends State<BookingsPage>
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
 
   @override
   void dispose() {
@@ -103,24 +110,24 @@ class _BookingsPageState extends State<BookingsPage>
     super.dispose();
   }
 
-  /// Get bookings stream - checks history for past dates, active bookings for today/future
-  /// Excludes "done" bookings from active bookings (they should only appear in history)
-  Stream<QuerySnapshot> _getBookingsStream(String dateId) {
+  /// Get pending bookings stream - only shows pending/confirmed bookings (not done/cancelled)
+  Stream<QuerySnapshot> _getPendingBookingsStream(String dateId) {
     final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final isPastDate = dateId.compareTo(todayId) < 0;
 
     if (isPastDate) {
-      // For past dates, check booking history
-      return _firestore
-          .collection('booking_history')
-          .where('date', isEqualTo: dateId)
-          .snapshots();
-    } else {
-      // For today and future dates, check active bookings (exclude "done" status)
+      // For past dates, return empty (past bookings should be in completed)
       return _firestore
           .collection('bookings')
           .where('date', isEqualTo: dateId)
-          .where('status', whereIn: ['pending', 'confirmed', 'cancelled'])
+          .where('status', whereIn: ['nonexistent']) // Return empty
+          .snapshots();
+    } else {
+      // For today and future dates, only show pending and confirmed bookings
+      return _firestore
+          .collection('bookings')
+          .where('date', isEqualTo: dateId)
+          .where('status', whereIn: ['pending', 'confirmed'])
           .snapshots();
     }
   }
@@ -1303,6 +1310,29 @@ class _BookingsPageState extends State<BookingsPage>
         return;
       }
 
+      // Check for conflicts with active sessions
+      final hasActiveSessionConflict = await BookingLogicService.hasTimeConflict(
+        deviceType: _selectedServiceType!,
+        date: dateId,
+        timeSlot: selectedTime24Hour,
+        durationHours: ourDurationHours,
+      );
+
+      if (hasActiveSessionConflict) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'This time slot conflicts with an active session. Please check active sessions first.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
       // Calculate duration based on service type
       double durationHours;
       if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
@@ -1502,9 +1532,14 @@ class _BookingsPageState extends State<BookingsPage>
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Mark as Done'),
+            title: const Text('Start Active Session'),
             content: const Text(
-              'Are you sure you want to mark this booking as done? It will be moved to history.',
+              'Are you sure you want to mark this booking as done?\n\n'
+              'This will:\n'
+              '• Create an active session for the customer\n'
+              '• Add the booking services to the session\n'
+              '• Remove the booking from the booking list\n\n'
+              'The session will use the same pricing and calculation rules.',
             ),
             actions: [
               TextButton(
@@ -1522,25 +1557,59 @@ class _BookingsPageState extends State<BookingsPage>
 
     if (confirm != true) return;
 
+    // Show loading indicator
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     try {
-      await _firestore.collection('bookings').doc(bookingId).update({
-        'status': 'done',
-        'completedAt': FieldValue.serverTimestamp(),
-      });
+      // Fetch booking data
+      final bookingDoc = await _firestore.collection('bookings').doc(bookingId).get();
+      
+      if (!bookingDoc.exists) {
+        throw Exception('Booking not found');
+      }
+
+      final bookingData = bookingDoc.data() as Map<String, dynamic>;
+      
+      // Validate booking data
+      BookingToSessionConverter.validateBooking(bookingData);
+      
+      // Convert booking to active session using centralized logic
+      final sessionId = await BookingToSessionConverter.convertBookingToActiveSession(
+        bookingId: bookingId,
+        bookingData: bookingData,
+      );
+
       if (mounted) {
+        Navigator.pop(context); // Close loading indicator
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking marked as done'),
+          SnackBar(
+            content: Text(
+              'Booking converted to active session successfully!\n'
+              'Session ID: ${sessionId.substring(0, 8)}...',
+            ),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
+        Navigator.pop(context); // Close loading indicator
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating booking: $e'),
+            content: Text(
+              'Error converting booking to session: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -1687,8 +1756,9 @@ class _BookingsPageState extends State<BookingsPage>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           tabs: const [
-            Tab(text: 'Active Bookings', icon: Icon(Icons.event, size: 18)),
-            Tab(text: 'History', icon: Icon(Icons.history, size: 18)),
+            Tab(text: 'Pending', icon: Icon(Icons.pending, size: 18)),
+            Tab(text: 'Active Sessions', icon: Icon(Icons.play_circle, size: 18)),
+            Tab(text: 'Completed', icon: Icon(Icons.history, size: 18)),
           ],
         ),
         actions: [
@@ -1731,10 +1801,12 @@ class _BookingsPageState extends State<BookingsPage>
             child: TabBarView(
               controller: _tabController,
               children: [
-                // Active Bookings Tab
-                _buildActiveBookingsTab(dateId),
-                // History Tab
-                _buildHistoryTab(),
+                // Pending Bookings Tab
+                _buildPendingBookingsTab(dateId),
+                // Active Sessions Tab
+                _buildActiveSessionsTab(),
+                // Completed Sessions Tab
+                _buildCompletedSessionsTab(),
               ],
             ),
           ),
@@ -1743,7 +1815,7 @@ class _BookingsPageState extends State<BookingsPage>
     );
   }
 
-  Widget _buildActiveBookingsTab(String dateId) {
+  Widget _buildPendingBookingsTab(String dateId) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -1842,8 +1914,15 @@ class _BookingsPageState extends State<BookingsPage>
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                // Show service type selection dialog
-                _showServiceTypeSelectionDialog();
+                // Navigate to new booking creation page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CreateBookingPage(
+                      selectedDate: _selectedDate,
+                    ),
+                  ),
+                );
               },
               icon: const Icon(Icons.add_circle_outline),
               label: const Text(
@@ -1874,7 +1953,7 @@ class _BookingsPageState extends State<BookingsPage>
           const SizedBox(height: 12),
           // Bookings List - Check history for past dates, active for today/future
           StreamBuilder<QuerySnapshot>(
-            stream: _getBookingsStream(dateId),
+            stream: _getPendingBookingsStream(dateId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -2170,7 +2249,16 @@ class _BookingsPageState extends State<BookingsPage>
                       title: Text(serviceType),
                       onTap: () {
                         Navigator.pop(context);
-                        _showBookingDialog(serviceType, _selectedDate);
+                        // Navigate to new booking creation page with selected service type
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CreateBookingPage(
+                              selectedDate: _selectedDate,
+                              serviceType: serviceType,
+                            ),
+                          ),
+                        );
                       },
                     );
                   }).toList(),
@@ -2185,7 +2273,176 @@ class _BookingsPageState extends State<BookingsPage>
     );
   }
 
-  Widget _buildHistoryTab() {
+  Widget _buildActiveSessionsTab() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('active_sessions')
+          .where('status', isEqualTo: 'active')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.play_circle_outline,
+                  size: 64,
+                  color: Colors.grey.shade400,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No Active Sessions',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Active sessions will appear here when bookings are marked as Done',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final sessions = snapshot.data!.docs;
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: sessions.length,
+          itemBuilder: (context, index) {
+            final doc = sessions[index];
+            final sessionData = doc.data() as Map<String, dynamic>;
+            final sessionId = doc.id;
+            final customerName = sessionData['customerName'] as String? ?? 'Customer';
+            final services = List<Map<String, dynamic>>.from(
+              sessionData['services'] ?? [],
+            );
+            final totalAmount = (sessionData['totalAmount'] ?? 0).toDouble();
+            final startTime = (sessionData['startTime'] as Timestamp?)?.toDate();
+
+            // Get primary device type from first service or deviceType field
+            String deviceType = sessionData['deviceType'] as String? ?? '';
+            if (deviceType.isEmpty && services.isNotEmpty) {
+              deviceType = services.first['type'] as String? ?? 'Unknown';
+            }
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 3,
+              child: InkWell(
+                onTap: () async {
+                  // Load session and navigate to detail page
+                  await context.read<SessionProvider>().loadSession(sessionId);
+                  if (context.mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SessionDetailPage(),
+                      ),
+                    );
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: _getServiceColor(deviceType),
+                        child: Icon(
+                          _getServiceIcon(deviceType),
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              customerName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$deviceType • ${services.length} service${services.length != 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            if (startTime != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Started: ${DateFormat('MMM dd, HH:mm').format(startTime)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Rs ${totalAmount.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green.shade700,
+                            ),
+                          ),
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'ACTIVE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletedSessionsTab() {
     // Show "done" bookings from active collection and archived bookings from history
     return Column(
       children: [
