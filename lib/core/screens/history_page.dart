@@ -101,6 +101,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Widget _buildSessionCard(String sessionId, Map<String, dynamic> data, String dateId) {
     final customerName = data['customerName'] ?? 'Unknown';
+    final phoneNumber = data['phoneNumber'] as String?;
     // Use finalAmount if discount exists, otherwise use totalAmount
     final displayAmount = (data['finalAmount'] ?? data['totalAmount'] ?? 0).toDouble();
     final services = List<Map<String, dynamic>>.from(data['services'] ?? []);
@@ -131,6 +132,8 @@ class _HistoryPageState extends State<HistoryPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Total: Rs ${displayAmount.toStringAsFixed(2)}'),
+            if (phoneNumber != null && phoneNumber.isNotEmpty)
+              Text('Phone: $phoneNumber', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
             if (timeInfo.isNotEmpty)
               Text(timeInfo, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ],

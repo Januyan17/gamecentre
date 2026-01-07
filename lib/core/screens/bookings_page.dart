@@ -400,7 +400,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
             builder: (context, setDialogState) {
               // Get device capacity
               final capacityFuture = DeviceCapacityService.getDeviceCapacity(serviceType);
-              
+
               // Function to reload availability for a new date
               Future<void> reloadAvailability(DateTime selectedDate) async {
                 try {
@@ -525,7 +525,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                 future: DeviceCapacityService.getDeviceCapacity(serviceType),
                 builder: (context, capacitySnapshot) {
                   final capacity = capacitySnapshot.data ?? 0;
-                  
+
                   return AlertDialog(
                     title: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -553,228 +553,254 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         ],
                       ],
                     ),
-                content: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.9,
-                    maxHeight: MediaQuery.of(context).size.height * 0.6,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Date Picker
-                        Text(
-                          'Select Date:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                        const SizedBox(height: 8),
-                        InkWell(
-                          onTap: () async {
-                            final now = DateTime.now();
-                            final maxDate = now.add(const Duration(days: 30));
-
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: dialogSelectedDate,
-                              firstDate: now,
-                              lastDate: maxDate,
-                              selectableDayPredicate: (date) {
-                                return date.isAfter(now.subtract(const Duration(days: 1))) &&
-                                    date.isBefore(maxDate.add(const Duration(days: 1)));
-                              },
-                            );
-
-                            if (picked != null && picked != dialogSelectedDate) {
-                              await reloadAvailability(picked);
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.purple.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.purple.shade300),
+                    content: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.9,
+                        maxHeight: MediaQuery.of(context).size.height * 0.6,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Date Picker
+                            Text(
+                              'Select Date:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                             ),
-                            child: Row(
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () async {
+                                final now = DateTime.now();
+                                final maxDate = now.add(const Duration(days: 30));
+
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate: dialogSelectedDate,
+                                  firstDate: now,
+                                  lastDate: maxDate,
+                                  selectableDayPredicate: (date) {
+                                    return date.isAfter(now.subtract(const Duration(days: 1))) &&
+                                        date.isBefore(maxDate.add(const Duration(days: 1)));
+                                  },
+                                );
+
+                                if (picked != null && picked != dialogSelectedDate) {
+                                  await reloadAvailability(picked);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.purple.shade300),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today, color: Colors.purple.shade700),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.purple.shade700,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              'Time Slots (30-minute intervals):',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.purple.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            FutureBuilder<int>(
+                              future: capacityFuture,
+                              builder: (context, capacitySnapshot) {
+                                final capacity = capacitySnapshot.data ?? 0;
+
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children:
+                                      timeSlots12Hour.asMap().entries.map((entry) {
+                                        final index = entry.key;
+                                        final slot12Hour = entry.value;
+                                        final slot24Hour = timeSlots24Hour[index];
+                                        // Check booked slots using 24-hour format
+                                        final isBooked = dialogBookedSlots.contains(slot24Hour);
+
+                                        return FutureBuilder<int>(
+                                          future:
+                                              capacity > 0
+                                                  ? DeviceCapacityService.getAvailableSlots(
+                                                    deviceType: serviceType,
+                                                    date: DateFormat(
+                                                      'yyyy-MM-dd',
+                                                    ).format(dialogSelectedDate),
+                                                    timeSlot: slot24Hour,
+                                                    durationHours:
+                                                        0.5, // Use 30 minutes (0.5 hours) to check each slot individually
+                                                  )
+                                                  : Future.value(999),
+                                          builder: (context, slotsSnapshot) {
+                                            final availableSlots = slotsSnapshot.data ?? 0;
+                                            // Only mark as fully booked if capacity > 0 AND all slots are booked
+                                            // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                                            final isFullyBooked =
+                                                capacity > 0 ? availableSlots == 0 : isBooked;
+
+                                            return FilterChip(
+                                              selected: false,
+                                              label: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(slot12Hour),
+                                                  if (capacity > 0 && slotsSnapshot.hasData) ...[
+                                                    const SizedBox(width: 4),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                        horizontal: 4,
+                                                        vertical: 2,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            availableSlots > 0
+                                                                ? Colors.green.shade100
+                                                                : Colors.red.shade100,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                      ),
+                                                      child: Text(
+                                                        '$availableSlots',
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.bold,
+                                                          color:
+                                                              availableSlots > 0
+                                                                  ? Colors.green.shade900
+                                                                  : Colors.red.shade900,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              onSelected: null, // Read-only in availability dialog
+                                              disabledColor: Colors.purple.shade100,
+                                              labelStyle: TextStyle(
+                                                color:
+                                                    isFullyBooked
+                                                        ? Colors.red.shade900
+                                                        : Colors.purple,
+                                                decoration:
+                                                    isFullyBooked
+                                                        ? TextDecoration.lineThrough
+                                                        : null,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                              avatar:
+                                                  isFullyBooked
+                                                      ? Icon(
+                                                        Icons.block,
+                                                        size: 16,
+                                                        color: Colors.red.shade800,
+                                                      )
+                                                      : Icon(
+                                                        Icons.check_circle,
+                                                        size: 16,
+                                                        color: Colors.purple,
+                                                      ),
+                                              tooltip:
+                                                  isFullyBooked
+                                                      ? capacity > 0
+                                                          ? 'All $capacity slots are booked for this time'
+                                                          : 'This time slot is already booked'
+                                                      : capacity > 0
+                                                      ? '$availableSlots of $capacity slots available'
+                                                      : 'Available',
+                                              backgroundColor:
+                                                  isFullyBooked ? Colors.red : Colors.purple,
+                                              side: BorderSide(
+                                                color:
+                                                    isFullyBooked
+                                                        ? Colors.red.shade500
+                                                        : Colors.purple,
+                                                width: 1,
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      }).toList(),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
                               children: [
-                                Icon(Icons.calendar_today, color: Colors.purple.shade700),
-                                const SizedBox(width: 8),
-                                Text(
-                                  DateFormat('MMM dd, yyyy').format(dialogSelectedDate),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.purple.shade700,
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple,
+                                    shape: BoxShape.circle,
                                   ),
                                 ),
-                                const Spacer(),
-                                Icon(Icons.arrow_drop_down, color: Colors.purple.shade700),
+                                const SizedBox(width: 6),
+                                const Text('Available', style: TextStyle(fontSize: 12)),
+                                const SizedBox(width: 16),
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade500,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('Booked', style: TextStyle(fontSize: 12)),
                               ],
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'Time Slots (30-minute intervals):',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.purple.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        FutureBuilder<int>(
-                          future: capacityFuture,
-                          builder: (context, capacitySnapshot) {
-                            final capacity = capacitySnapshot.data ?? 0;
-                            
-                            return Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children:
-                                  timeSlots12Hour.asMap().entries.map((entry) {
-                                    final index = entry.key;
-                                    final slot12Hour = entry.value;
-                                    final slot24Hour = timeSlots24Hour[index];
-                                    // Check booked slots using 24-hour format
-                                    final isBooked = dialogBookedSlots.contains(slot24Hour);
-
-                                    return FutureBuilder<int>(
-                                      future: capacity > 0
-                                          ? DeviceCapacityService.getAvailableSlots(
-                                              deviceType: serviceType,
-                                              date: DateFormat('yyyy-MM-dd').format(dialogSelectedDate),
-                                              timeSlot: slot24Hour,
-                                              durationHours: 0.5, // Use 30 minutes (0.5 hours) to check each slot individually
-                                            )
-                                          : Future.value(999),
-                                      builder: (context, slotsSnapshot) {
-                                        final availableSlots = slotsSnapshot.data ?? 0;
-                                        // Only mark as fully booked if capacity > 0 AND all slots are booked
-                                        // OR if capacity == 0 AND time slot is marked as booked (old behavior)
-                                        final isFullyBooked = capacity > 0 
-                                            ? availableSlots == 0 
-                                            : isBooked;
-
-                                        return FilterChip(
-                                          selected: false,
-                                          label: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(slot12Hour),
-                                              if (capacity > 0 && slotsSnapshot.hasData) ...[
-                                                const SizedBox(width: 4),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: availableSlots > 0
-                                                        ? Colors.green.shade100
-                                                        : Colors.red.shade100,
-                                                    borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: Text(
-                                                    '$availableSlots',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.bold,
-                                                      color: availableSlots > 0
-                                                          ? Colors.green.shade900
-                                                          : Colors.red.shade900,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                          onSelected: null, // Read-only in availability dialog
-                                          disabledColor: Colors.purple.shade100,
-                                          labelStyle: TextStyle(
-                                            color: isFullyBooked ? Colors.red.shade900 : Colors.purple,
-                                            decoration: isFullyBooked ? TextDecoration.lineThrough : null,
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 12,
-                                          ),
-                                          avatar:
-                                              isFullyBooked
-                                                  ? Icon(Icons.block, size: 16, color: Colors.red.shade800)
-                                                  : Icon(
-                                                    Icons.check_circle,
-                                                    size: 16,
-                                                    color: Colors.purple,
-                                                  ),
-                                          tooltip: isFullyBooked
-                                              ? capacity > 0
-                                                  ? 'All $capacity slots are booked for this time'
-                                                  : 'This time slot is already booked'
-                                              : capacity > 0
-                                                  ? '$availableSlots of $capacity slots available'
-                                                  : 'Available',
-                                          backgroundColor: isFullyBooked ? Colors.red : Colors.purple,
-                                          side: BorderSide(
-                                            color: isFullyBooked ? Colors.red.shade500 : Colors.purple,
-                                            width: 1,
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  }).toList(),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Colors.purple,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text('Available', style: TextStyle(fontSize: 12)),
-                            const SizedBox(width: 16),
-                            Container(
-                              width: 12,
-                              height: 12,
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade500,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text('Booked', style: TextStyle(fontSize: 12)),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // Navigate to create booking page with selected service type and date
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder:
-                              (_) => CreateBookingPage(
-                                selectedDate: dialogSelectedDate,
-                                serviceType: serviceType,
-                              ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Navigate to create booking page with selected service type and date
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => CreateBookingPage(
+                                    selectedDate: dialogSelectedDate,
+                                    serviceType: serviceType,
+                                  ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.purple.shade700,
+                          foregroundColor: Colors.white,
                         ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple.shade700,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Book Now'),
-                  ),
-                ],
+                        child: const Text('Book Now'),
+                      ),
+                    ],
                   );
                 },
               );

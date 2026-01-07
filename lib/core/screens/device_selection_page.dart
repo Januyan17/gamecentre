@@ -1140,6 +1140,7 @@ class BookingToSessionConverter {
       // Extract booking information
       final serviceType = bookingData['serviceType'] as String? ?? '';
       final customerName = bookingData['customerName'] as String? ?? 'Customer';
+      final phoneNumber = bookingData['phoneNumber'] as String?;
       final date = bookingData['date'] as String? ?? '';
       final timeSlot = bookingData['timeSlot'] as String? ?? '';
 
@@ -1157,7 +1158,10 @@ class BookingToSessionConverter {
       final startTime = _parseTimeSlotToDateTime(date, timeSlot);
 
       // Create active session with booking reference
-      final sessionId = await _sessionService.createSession(customerName);
+      final sessionId = await _sessionService.createSession(
+        customerName,
+        phoneNumber: phoneNumber,
+      );
 
       // Store booking reference and device info in session
       await _firestore.collection('active_sessions').doc(sessionId).update({

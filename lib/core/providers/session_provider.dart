@@ -36,8 +36,8 @@ class SessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> createSession(String name) async {
-    activeSessionId = await _service.createSession(name);
+  Future<void> createSession(String name, {String? phoneNumber}) async {
+    activeSessionId = await _service.createSession(name, phoneNumber: phoneNumber);
     currentTotal = 0;
     services = [];
     notifyListeners();

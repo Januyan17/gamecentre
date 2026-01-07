@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../providers/session_provider.dart';
+import '../services/session_service.dart';
 import 'session_detail_page.dart';
 
 class CreateSessionPage extends StatefulWidget {
@@ -18,6 +19,10 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   final List<TextEditingController> _mobileControllers = [TextEditingController()];
   bool _isCreating = false;
   String? _selectedServiceType;
+  final SessionService _sessionService = SessionService();
+  Map<int, Map<String, dynamic>?> _foundUserHistory = {}; // Store found history for each customer index
+  Map<int, int> _mobileLengths = {}; // Track mobile number lengths for UI updates
+  Map<int, bool> _searchCompleted = {}; // Track if search has completed for each index
 
   // Helper function to convert 24-hour time string to 12-hour format
   String _formatTime12Hour(String time24Hour) {
@@ -39,6 +44,14 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
   final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
 
   @override
+  void initState() {
+    super.initState();
+    // Initialize mobile lengths and search status for the first customer
+    _mobileLengths[0] = 0;
+    _searchCompleted[0] = false;
+  }
+
+  @override
   void dispose() {
     for (var controller in _customerControllers) {
       controller.dispose();
@@ -51,8 +64,11 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
 
   void _addCustomer() {
     setState(() {
+      final newIndex = _customerControllers.length;
       _customerControllers.add(TextEditingController());
       _mobileControllers.add(TextEditingController());
+      _mobileLengths[newIndex] = 0;
+      _searchCompleted[newIndex] = false;
     });
   }
 
@@ -63,7 +79,231 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
         _mobileControllers[index].dispose();
         _customerControllers.removeAt(index);
         _mobileControllers.removeAt(index);
+        _foundUserHistory.remove(index);
+        _mobileLengths.remove(index);
+        // Update indices for remaining items
+        final newLengths = <int, int>{};
+        for (int i = 0; i < _mobileControllers.length; i++) {
+          if (_mobileLengths.containsKey(i + 1)) {
+            newLengths[i] = _mobileLengths[i + 1]!;
+          } else {
+            newLengths[i] = _mobileControllers[i].text.length;
+          }
+        }
+        _mobileLengths = newLengths;
       });
+    }
+  }
+
+  /// Search for user history by phone number
+  Future<void> _searchUserHistory(int index) async {
+    final phoneNumber = _mobileControllers[index].text.trim();
+    if (phoneNumber.length != 10) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid 10-digit mobile number'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Prevent duplicate searches for the same number
+    final currentHistory = _foundUserHistory[index];
+    if (currentHistory != null) {
+      final historyPhone = currentHistory['phoneNumber'] as String?;
+      if (historyPhone != null) {
+        final cleanHistoryPhone = historyPhone.replaceAll(RegExp(r'[^\d]'), '');
+        final cleanInputPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+        if (cleanHistoryPhone == cleanInputPhone) {
+          return; // Already searched this exact number
+        }
+      }
+    }
+
+    // Update UI to show searching state
+    if (mounted) {
+      setState(() {
+        _foundUserHistory[index] = null; // Clear previous result
+        _searchCompleted[index] = false; // Mark as searching
+      });
+    }
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              SizedBox(width: 16),
+              Text('Searching user history...'),
+            ],
+          ),
+          duration: Duration(seconds: 10), // Increased timeout
+        ),
+      );
+    }
+
+    try {
+      // Add timeout to prevent hanging
+      final historyData = await _sessionService.searchUserHistoryByPhone(phoneNumber)
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () {
+              print('Search timeout for phone: $phoneNumber');
+              return null;
+            },
+          );
+      
+      if (!mounted) return;
+      
+      // Update state immediately
+      setState(() {
+        _foundUserHistory[index] = historyData;
+        _searchCompleted[index] = true; // Mark search as completed
+        if (historyData != null && _customerControllers[index].text.trim().isEmpty) {
+          // Auto-fill name if field is empty
+          final customerName = historyData['customerName'] as String? ?? '';
+          // Extract name if it contains phone number in format "Name (phone)"
+          if (customerName.contains('(')) {
+            _customerControllers[index].text = customerName.split('(')[0].trim();
+          } else {
+            _customerControllers[index].text = customerName;
+          }
+        }
+      });
+
+      // Show result message only if user found
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      if (historyData != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ User found in history!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      // No snackbar for "not found" - it's shown in helper text in red
+    } catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error searching history: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      setState(() {
+        _foundUserHistory[index] = null;
+        _searchCompleted[index] = true; // Mark as completed even on error
+      });
+    }
+  }
+
+  /// Auto-fill customer data from history and create session
+  Future<void> _autoFillFromHistory(int index) async {
+    final historyData = _foundUserHistory[index];
+    if (historyData == null) return;
+
+    final phoneNumber = _mobileControllers[index].text.trim();
+    if (phoneNumber.length != 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid 10-digit mobile number'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Validate service type
+    if (_selectedServiceType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a service type first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Get customer name
+    String customerName = _customerControllers[index].text.trim();
+    if (customerName.isEmpty) {
+      customerName = historyData['customerName'] as String? ?? '';
+      // Extract name if it contains phone number in format "Name (phone)"
+      if (customerName.contains('(')) {
+        customerName = customerName.split('(')[0].trim();
+      }
+      _customerControllers[index].text = customerName;
+    }
+
+    if (customerName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not find customer name in history'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Check for booking conflicts
+    try {
+      await _checkBookingConflict();
+    } catch (e) {
+      // Error already shown in _checkBookingConflict
+      return;
+    }
+
+    // Create session with phone number
+    setState(() {
+      _isCreating = true;
+    });
+
+    try {
+      // Format customer data
+      final customerNameWithPhone = '$customerName ($phoneNumber)';
+      
+      await context.read<SessionProvider>().createSession(
+        customerNameWithPhone,
+        phoneNumber: phoneNumber,
+      );
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const SessionDetailPage()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCreating = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating session: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -303,19 +543,103 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                               labelText: 'Mobile Number',
                               border: const OutlineInputBorder(),
                               prefixIcon: const Icon(Icons.phone),
+                              suffixIcon: (_mobileLengths[index] ?? 0) == 10
+                                  ? IconButton(
+                                      icon: const Icon(Icons.search),
+                                      onPressed: () => _searchUserHistory(index),
+                                      tooltip: 'Search user history',
+                                    )
+                                  : null,
                               counterText: '',
-                              helperText: 'Enter 10 digit mobile number',
-                              helperMaxLines: 1,
+                              helperText: _foundUserHistory[index] != null
+                                  ? '✓ User found in history!'
+                                  : (_searchCompleted[index] == true && _foundUserHistory[index] == null)
+                                      ? 'No user found'
+                                      : (_mobileLengths[index] ?? 0) == 10
+                                          ? 'Searching...'
+                                          : 'Enter 10 digit mobile number',
+                              helperMaxLines: 2,
+                              helperStyle: TextStyle(
+                                color: (_searchCompleted[index] == true && _foundUserHistory[index] == null)
+                                    ? Colors.red
+                                    : _foundUserHistory[index] != null
+                                        ? Colors.green
+                                        : null,
+                              ),
                               errorText:
-                                  _mobileControllers[index].text.isNotEmpty &&
-                                          _mobileControllers[index].text.length != 10
+                                  (_mobileLengths[index] ?? 0) > 0 &&
+                                          (_mobileLengths[index] ?? 0) != 10
                                       ? 'Mobile number must be 10 digits'
                                       : null,
                             ),
                             onChanged: (value) {
-                              setState(() {});
+                              // Update length immediately
+                              setState(() {
+                                _mobileLengths[index] = value.length;
+                                
+                                // Clear found history and search status when number changes
+                                if (_foundUserHistory[index] != null || _searchCompleted[index] == true) {
+                                  _foundUserHistory[index] = null;
+                                  _searchCompleted[index] = false;
+                                }
+                              });
+                              
+                              // Auto-search when 10 digits are entered
+                              if (value.length == 10) {
+                                // Small delay to ensure UI updates first
+                                Future.delayed(const Duration(milliseconds: 300), () {
+                                  if (mounted && _mobileControllers[index].text.length == 10) {
+                                    _searchUserHistory(index);
+                                  }
+                                });
+                              }
                             },
                           ),
+                          if (_foundUserHistory[index] != null) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.shade300),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.check_circle, color: Colors.green.shade700, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'User found in history',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Name: ${_foundUserHistory[index]!['customerName'] ?? 'Unknown'}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ElevatedButton.icon(
+                                    onPressed: () => _autoFillFromHistory(index),
+                                    icon: const Icon(Icons.auto_fix_high, size: 16),
+                                    label: const Text('Auto-fill & Create Session'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -439,7 +763,15 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
                                   .map((c) => '${c['name']} (${c['mobile']})')
                                   .join(', ');
 
-                              await context.read<SessionProvider>().createSession(customerName);
+                              // Use first customer's phone number for the session
+                              final primaryPhoneNumber = validCustomers.isNotEmpty 
+                                  ? validCustomers.first['mobile'] 
+                                  : null;
+
+                              await context.read<SessionProvider>().createSession(
+                                customerName,
+                                phoneNumber: primaryPhoneNumber,
+                              );
 
                               if (mounted) {
                                 Navigator.pushReplacement(
