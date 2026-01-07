@@ -124,12 +124,15 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       double price = 0.0;
 
       if (_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') {
-        price = await BookingLogicService.calculateBookingPrice(
+        // Calculate price for one console
+        final singleConsolePrice = await BookingLogicService.calculateBookingPrice(
           deviceType: _selectedServiceType!,
           hours: _durationHours,
           minutes: _minutes,
           additionalControllers: _additionalControllers,
         );
+        // Multiply by console count
+        price = singleConsolePrice * _consoleCount;
       } else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') {
         price = await BookingLogicService.calculateBookingPrice(
           deviceType: _selectedServiceType!,
@@ -295,15 +298,6 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create Booking'),
-        actions: [
-          TextButton(
-            onPressed: _createBooking,
-            child: const Text(
-              'Create',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -341,7 +335,48 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
                   // Price Display
                   if (_priceCalculated) _buildPriceSection(),
+                  
+                  const SizedBox(height: 24),
                 ],
+              ),
+            ),
+          ),
+          
+          // Create Button at Bottom
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.shade300,
+                  blurRadius: 4,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _createBooking,
+                  icon: const Icon(Icons.check_circle, size: 24),
+                  label: const Text(
+                    'Create Booking',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -813,27 +848,82 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   }
 
   Widget _buildPriceSection() {
+    // Calculate single console price for display
+    double singleConsolePrice = 0.0;
+    if ((_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') && _consoleCount > 1) {
+      singleConsolePrice = _calculatedPrice / _consoleCount;
+    }
+
     return Card(
       color: Colors.blue.shade50,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Total Price:',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+            if ((_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') && _consoleCount > 1) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Price per console:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  Text(
+                    'Rs ${singleConsolePrice.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Text(
-              'Rs ${_calculatedPrice.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue.shade700,
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Console count:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  Text(
+                    '$_consoleCount',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
               ),
+              const Divider(height: 24),
+            ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Total Price:',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'Rs ${_calculatedPrice.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
