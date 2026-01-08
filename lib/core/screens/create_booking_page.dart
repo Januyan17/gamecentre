@@ -5,12 +5,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/booking_logic_service.dart';
 import '../services/device_capacity_service.dart';
+import '../services/session_service.dart';
 
 class CreateBookingPage extends StatefulWidget {
   final DateTime selectedDate;
   final String? serviceType;
 
-  const CreateBookingPage({super.key, required this.selectedDate, this.serviceType});
+  const CreateBookingPage({
+    super.key,
+    required this.selectedDate,
+    this.serviceType,
+  });
 
   @override
   State<CreateBookingPage> createState() => _CreateBookingPageState();
@@ -57,12 +62,24 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   Map<String, int> _availableSlotsCache = {};
   bool _loadingSlots = false;
 
+  // User history search
+  final SessionService _sessionService = SessionService();
+  Map<String, dynamic>? _foundUserHistory;
+  bool _searchCompleted = false;
+  int _phoneLength = 0;
+
   // Common scenarios
   List<Map<String, dynamic>> _commonScenarios = [];
   bool _loadingScenarios = true;
   String? _scenariosError;
 
-  final List<String> _serviceTypes = ['PS5', 'PS4', 'VR', 'Simulator', 'Theatre'];
+  final List<String> _serviceTypes = [
+    'PS5',
+    'PS4',
+    'VR',
+    'Simulator',
+    'Theatre',
+  ];
 
   @override
   void initState() {
@@ -83,7 +100,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     });
 
     try {
-      final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+      final capacity = await DeviceCapacityService.getDeviceCapacity(
+        _selectedServiceType!,
+      );
       setState(() {
         _deviceCapacity = capacity;
         _loadingCapacity = false;
@@ -119,12 +138,16 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                 .collection('common_scenarios')
                 .orderBy('order', descending: false)
                 .get();
-        debugPrint('Common scenarios loaded with orderBy: ${snapshot.docs.length} docs');
+        debugPrint(
+          'Common scenarios loaded with orderBy: ${snapshot.docs.length} docs',
+        );
       } catch (e) {
         // If orderBy fails, try without it
         debugPrint('OrderBy failed, trying without order: $e');
         snapshot = await _firestore.collection('common_scenarios').get();
-        debugPrint('Common scenarios loaded without orderBy: ${snapshot.docs.length} docs');
+        debugPrint(
+          'Common scenarios loaded without orderBy: ${snapshot.docs.length} docs',
+        );
       }
 
       if (snapshot.docs.isEmpty) {
@@ -147,7 +170,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             'count': (data['count'] as num?)?.toInt() ?? 1,
             'hours': (data['hours'] as num?)?.toInt() ?? 1,
             'minutes': (data['minutes'] as num?)?.toInt() ?? 0,
-            'additionalControllers': (data['additionalControllers'] as num?)?.toInt() ?? 0,
+            'additionalControllers':
+                (data['additionalControllers'] as num?)?.toInt() ?? 0,
             'label': data['label'] ?? '',
             'order': (data['order'] as num?)?.toInt() ?? 0,
           });
@@ -200,8 +224,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       for (var doc in bookingsSnapshot.docs) {
         final data = doc.data();
         final timeSlot = data['timeSlot'] as String? ?? '';
-        final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        final durationHours =
+            (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final status =
+            (data['status'] as String? ?? 'pending').toLowerCase().trim();
 
         // Skip cancelled bookings
         if (status == 'cancelled') continue;
@@ -240,7 +266,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
         for (var sessionDoc in activeSessionsSnapshot.docs) {
           final sessionData = sessionDoc.data();
-          final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+          final services = List<Map<String, dynamic>>.from(
+            sessionData['services'] ?? [],
+          );
 
           for (var service in services) {
             final serviceType = service['type'] as String? ?? '';
@@ -291,7 +319,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
             for (var sessionDoc in historySessionsSnapshot.docs) {
               final sessionData = sessionDoc.data();
-              final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+              final services = List<Map<String, dynamic>>.from(
+                sessionData['services'] ?? [],
+              );
 
               for (var service in services) {
                 final serviceType = service['type'] as String? ?? '';
@@ -302,7 +332,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
                 try {
                   final startTime = DateTime.parse(startTimeStr);
-                  final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                  final serviceDateId = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(startTime);
 
                   // Only check for the same date
                   if (serviceDateId != dateId) continue;
@@ -311,11 +343,16 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
                   final durationHours = hours + (minutes / 60.0);
 
-                  final startDecimal = startTime.hour + (startTime.minute / 60.0);
+                  final startDecimal =
+                      startTime.hour + (startTime.minute / 60.0);
                   final endDecimal = startDecimal + durationHours;
 
                   // Mark all affected time slots
-                  for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                  for (
+                    double hour = startDecimal;
+                    hour < endDecimal;
+                    hour += 0.5
+                  ) {
                     final slotHour = hour.floor();
                     final slotMinute = ((hour - slotHour) * 60).round();
                     final slotStr =
@@ -345,7 +382,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
           for (var sessionDoc in historySessionsSnapshot.docs) {
             final sessionData = sessionDoc.data();
-            final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+            final services = List<Map<String, dynamic>>.from(
+              sessionData['services'] ?? [],
+            );
 
             for (var service in services) {
               final serviceType = service['type'] as String? ?? '';
@@ -356,7 +395,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
               try {
                 final startTime = DateTime.parse(startTimeStr);
-                final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                final serviceDateId = DateFormat(
+                  'yyyy-MM-dd',
+                ).format(startTime);
 
                 // Only check for the same date
                 if (serviceDateId != dateId) continue;
@@ -369,7 +410,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                 final endDecimal = startDecimal + durationHours;
 
                 // Mark all affected time slots
-                for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                for (
+                  double hour = startDecimal;
+                  hour < endDecimal;
+                  hour += 0.5
+                ) {
                   final slotHour = hour.floor();
                   final slotMinute = ((hour - slotHour) * 60).round();
                   final slotStr =
@@ -407,15 +452,17 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
     if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') {
       // Calculate price for one console first
-      final singleConsolePrice = await BookingLogicService.calculateBookingPrice(
-        deviceType: _selectedServiceType!,
-        hours: _durationHours,
-        minutes: _minutes,
-        additionalControllers: _additionalControllers,
-      );
+      final singleConsolePrice =
+          await BookingLogicService.calculateBookingPrice(
+            deviceType: _selectedServiceType!,
+            hours: _durationHours,
+            minutes: _minutes,
+            additionalControllers: _additionalControllers,
+          );
       // Multiply by console count
       price = singleConsolePrice * _consoleCount;
-    } else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') {
+    } else if (_selectedServiceType == 'VR' ||
+        _selectedServiceType == 'Simulator') {
       // VR/Simulator: 1 game per person
       // Price = price per person × number of people
       // Get price per person from admin settings
@@ -456,6 +503,129 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     _preloadAvailableSlots(); // Preload slots for new service type
   }
 
+  /// Search for user history by phone number
+  Future<void> _searchUserHistory() async {
+    final phoneNumber = _phoneController.text.trim();
+    if (phoneNumber.length != 10) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid 10-digit mobile number'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Prevent duplicate searches for the same number
+    if (_foundUserHistory != null) {
+      final historyPhone = _foundUserHistory!['phoneNumber'] as String?;
+      if (historyPhone != null) {
+        final cleanHistoryPhone = historyPhone.replaceAll(RegExp(r'[^\d]'), '');
+        final cleanInputPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+        if (cleanHistoryPhone == cleanInputPhone) {
+          return; // Already searched this exact number
+        }
+      }
+    }
+
+    // Update UI to show searching state
+    if (mounted) {
+      setState(() {
+        _foundUserHistory = null; // Clear previous result
+        _searchCompleted = false; // Mark as searching
+      });
+    }
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              SizedBox(width: 16),
+              Text('Searching user history...'),
+            ],
+          ),
+          duration: Duration(seconds: 10),
+        ),
+      );
+    }
+
+    try {
+      // Add timeout to prevent hanging
+      final historyData = await _sessionService
+          .searchUserHistoryByPhone(phoneNumber)
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () {
+              debugPrint('Search timeout for phone: $phoneNumber');
+              return null;
+            },
+          );
+
+      if (!mounted) return;
+
+      // Update state immediately
+      setState(() {
+        _foundUserHistory = historyData;
+        _searchCompleted = true; // Mark search as completed
+        if (historyData != null && _nameController.text.trim().isEmpty) {
+          // Auto-fill name if field is empty
+          final customerName = historyData['customerName'] as String? ?? '';
+          // Extract name if it contains phone number in format "Name (phone)"
+          if (customerName.contains('(')) {
+            _nameController.text = customerName.split('(')[0].trim();
+          } else {
+            _nameController.text = customerName;
+          }
+        }
+      });
+
+      // Show result message only if user found
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      if (historyData != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ User found in history!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      // No snackbar for "not found" - it's shown in helper text in red
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Error searching history: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      setState(() {
+        _foundUserHistory = null;
+        _searchCompleted = true; // Mark as completed even on error
+      });
+    }
+  }
+
   /// Get max available slots for the selected time slot
   Future<int> _getMaxAvailableForSelectedTime() async {
     if (_selectedServiceType == null || _deviceCapacity == 0) {
@@ -482,7 +652,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       double durationHours = 1.0;
       if (_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') {
         durationHours = _durationHours + (_minutes / 60.0);
-      } else if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+      } else if (_selectedServiceType == 'Simulator' ||
+          _selectedServiceType == 'VR') {
         durationHours = (_numberOfPeople * 5) / 60.0;
       } else if (_selectedServiceType == 'Theatre') {
         durationHours = _theatreHours.toDouble();
@@ -586,7 +757,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
     if (customerName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter customer name'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Please enter customer name'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -618,14 +792,20 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     // Validate time slot
     if (_selectedTimeSlot == null && !_useCustomTime) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a time slot'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Please select a time slot'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
     if (_useCustomTime && _customTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a custom time'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Please select a custom time'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -653,7 +833,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       double durationHours = 1.0;
       if (_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') {
         durationHours = _durationHours + (_minutes / 60.0);
-      } else if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+      } else if (_selectedServiceType == 'Simulator' ||
+          _selectedServiceType == 'VR') {
         // 1 game per person, 5 minutes per game
         final totalGames = _numberOfPeople;
         durationHours = (totalGames * 5) / 60.0;
@@ -675,7 +856,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         int requiredCount = 1;
         if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') {
           requiredCount = _consoleCount;
-        } else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') {
+        } else if (_selectedServiceType == 'VR' ||
+            _selectedServiceType == 'Simulator') {
           requiredCount = _numberOfPeople;
         } else if (_selectedServiceType == 'Theatre') {
           requiredCount = _theatrePeople;
@@ -685,7 +867,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           if (mounted) {
             Navigator.pop(context); // Close loading
 
-            final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+            final capacity = await DeviceCapacityService.getDeviceCapacity(
+              _selectedServiceType!,
+            );
             String errorMessage;
             if (availableSlots == 0) {
               errorMessage =
@@ -724,7 +908,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           Navigator.pop(context); // Close loading
 
           // Get capacity info for better error message
-          final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+          final capacity = await DeviceCapacityService.getDeviceCapacity(
+            _selectedServiceType!,
+          );
           final availableSlots = await DeviceCapacityService.getAvailableSlots(
             deviceType: _selectedServiceType!,
             date: dateId,
@@ -737,7 +923,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             errorMessage =
                 'All ${capacity} ${_selectedServiceType} slots are booked for this time. Please choose a different time.';
           } else {
-            errorMessage = 'This time slot conflicts with an existing booking or active session.';
+            errorMessage =
+                'This time slot conflicts with an existing booking or active session.';
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -752,7 +939,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       }
 
       // Get next available slot ID
-      final slotId = await DeviceCapacityService.getNextSlotId(_selectedServiceType!);
+      final slotId = await DeviceCapacityService.getNextSlotId(
+        _selectedServiceType!,
+      );
 
       // Create booking data
       final bookingData = {
@@ -765,7 +954,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         'slotId': slotId, // Assign slot ID
         if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4')
           'consoleCount': _consoleCount,
-        if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') ...{
+        if (_selectedServiceType == 'Simulator' ||
+            _selectedServiceType == 'VR') ...{
           'numberOfPeople': _numberOfPeople,
           'numberOfGames': _numberOfPeople, // 1 game per person
           'durationMinutes': _numberOfPeople * 5, // 5 minutes per game
@@ -794,7 +984,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       if (mounted) {
         Navigator.pop(context); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error creating booking: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error creating booking: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -845,7 +1038,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           border: Border.all(color: Colors.blue.shade200, width: 1),
         ),
         child: const Center(
-          child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          child: SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
         ),
       );
     }
@@ -878,7 +1075,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.refresh, size: 18, color: Colors.red.shade700),
+                  icon: Icon(
+                    Icons.refresh,
+                    size: 18,
+                    color: Colors.red.shade700,
+                  ),
                   onPressed: _loadCommonScenarios,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -960,7 +1161,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.refresh, size: 16, color: Colors.blue.shade700),
+                icon: Icon(
+                  Icons.refresh,
+                  size: 16,
+                  color: Colors.blue.shade700,
+                ),
                 onPressed: _loadCommonScenarios,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -981,9 +1186,12 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       final type = scenario['type'] as String? ?? 'PS5';
                       final count = (scenario['count'] as num?)?.toInt() ?? 1;
                       final hours = (scenario['hours'] as num?)?.toInt() ?? 1;
-                      final minutes = (scenario['minutes'] as num?)?.toInt() ?? 0;
+                      final minutes =
+                          (scenario['minutes'] as num?)?.toInt() ?? 0;
                       final additionalControllers =
-                          (scenario['additionalControllers'] as num?)?.toInt() ?? 0;
+                          (scenario['additionalControllers'] as num?)
+                              ?.toInt() ??
+                          0;
                       final label =
                           scenario['label'] as String? ??
                           '$count $type${hours > 0 ? ' ${hours}h' : ''}${additionalControllers > 0 ? ' Multi' : ''}';
@@ -1011,7 +1219,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                               ),
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: color,
                               borderRadius: BorderRadius.circular(8),
@@ -1027,7 +1238,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  additionalControllers > 0 ? Icons.people : Icons.sports_esports,
+                                  additionalControllers > 0
+                                      ? Icons.people
+                                      : Icons.sports_esports,
                                   size: 16,
                                   color: Colors.white,
                                 ),
@@ -1123,7 +1336,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
-                BoxShadow(color: Colors.grey.shade300, blurRadius: 4, offset: const Offset(0, -2)),
+                BoxShadow(
+                  color: Colors.grey.shade300,
+                  blurRadius: 4,
+                  offset: const Offset(0, -2),
+                ),
               ],
             ),
             child: SafeArea(
@@ -1140,7 +1357,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
@@ -1155,7 +1374,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Booking Date', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text(
+          'Booking Date',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 16),
         InkWell(
           onTap: () async {
@@ -1191,7 +1413,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             ),
             child: Row(
               children: [
-                Icon(Icons.calendar_today, color: Colors.purple.shade700, size: 24),
+                Icon(
+                  Icons.calendar_today,
+                  color: Colors.purple.shade700,
+                  size: 24,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1217,7 +1443,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_drop_down, color: Colors.purple.shade700, size: 24),
+                Icon(
+                  Icons.arrow_drop_down,
+                  color: Colors.purple.shade700,
+                  size: 24,
+                ),
               ],
             ),
           ),
@@ -1248,18 +1478,100 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         const SizedBox(height: 16),
         TextField(
           controller: _phoneController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Phone Number',
             hintText: 'Enter 10-digit mobile number (optional)',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.phone),
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.phone),
+            suffixIcon:
+                _phoneLength == 10
+                    ? IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: () => _searchUserHistory(),
+                      tooltip: 'Search user history',
+                    )
+                    : null,
             counterText: '',
+            helperText:
+                _foundUserHistory != null
+                    ? '✓ User found in history!'
+                    : (_searchCompleted && _foundUserHistory == null)
+                    ? 'No user found'
+                    : _phoneLength == 10
+                    ? 'Tap search icon or wait...'
+                    : 'Enter 10 digit mobile number',
+            helperMaxLines: 2,
+            helperStyle: TextStyle(
+              color:
+                  (_searchCompleted && _foundUserHistory == null)
+                      ? Colors.red
+                      : _foundUserHistory != null
+                      ? Colors.green
+                      : null,
+            ),
           ),
           keyboardType: TextInputType.phone,
           maxLength: 10,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+          buildCounter:
+              (
+                context, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) => null,
+          onChanged: (value) {
+            setState(() {
+              _phoneLength = value.length;
+
+              // Clear found history and search status when number changes
+              if (_foundUserHistory != null || _searchCompleted) {
+                _foundUserHistory = null;
+                _searchCompleted = false;
+              }
+            });
+
+            // Auto-search when 10 digits are entered
+            if (value.length == 10) {
+              // Small delay to ensure UI updates first
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted && _phoneController.text.length == 10) {
+                  _searchUserHistory();
+                }
+              });
+            }
+          },
         ),
+        if (_foundUserHistory != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade300),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle,
+                  color: Colors.green.shade700,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'User found: ${_foundUserHistory!['customerName'] ?? 'Unknown'}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1268,7 +1580,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Service Type', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text(
+          'Service Type',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 16),
         Wrap(
           spacing: 12,
@@ -1361,9 +1676,13 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Number of Consoles:'),
-                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                      if (_deviceCapacity > 0 &&
+                          _selectedTimeSlot != null &&
+                          snapshot.hasData)
                         Text(
-                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          snapshot.data! >= 0
+                              ? 'Max available: $maxAvailable'
+                              : 'Unlimited',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade600,
@@ -1402,10 +1721,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                             _consoleCount < maxConsoles || _deviceCapacity == 0
                                 ? () async {
                                   // Check available slots before allowing increase
-                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
-                                    final available = await _getMaxAvailableForSelectedTime();
+                                  if (_deviceCapacity > 0 &&
+                                      _selectedTimeSlot != null) {
+                                    final available =
+                                        await _getMaxAvailableForSelectedTime();
                                     if (available < _consoleCount + 1) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
                                           content: Text(
                                             'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase console count.',
@@ -1451,7 +1774,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   ),
                   Text(
                     '$_durationHours',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
@@ -1487,7 +1813,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   ),
                   Text(
                     '$_minutes',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
@@ -1523,7 +1852,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   ),
                   Text(
                     '$_additionalControllers',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
@@ -1538,7 +1870,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
               ),
             ],
           ),
-        ] else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') ...[
+        ] else if (_selectedServiceType == 'VR' ||
+            _selectedServiceType == 'Simulator') ...[
           FutureBuilder<int>(
             future: _getMaxAvailableForSelectedTime(),
             builder: (context, snapshot) {
@@ -1563,9 +1896,13 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Number of People:'),
-                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                      if (_deviceCapacity > 0 &&
+                          _selectedTimeSlot != null &&
+                          snapshot.hasData)
                         Text(
-                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          snapshot.data! >= 0
+                              ? 'Max available: $maxAvailable'
+                              : 'Unlimited',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade600,
@@ -1603,10 +1940,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                         onPressed:
                             _numberOfPeople < maxPeople || _deviceCapacity == 0
                                 ? () async {
-                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
-                                    final available = await _getMaxAvailableForSelectedTime();
+                                  if (_deviceCapacity > 0 &&
+                                      _selectedTimeSlot != null) {
+                                    final available =
+                                        await _getMaxAvailableForSelectedTime();
                                     if (available < _numberOfPeople + 1) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
                                           content: Text(
                                             'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase people count.',
@@ -1660,7 +2001,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   ),
                   Text(
                     '$_theatreHours',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
@@ -1700,9 +2044,13 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Number of People:'),
-                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                      if (_deviceCapacity > 0 &&
+                          _selectedTimeSlot != null &&
+                          snapshot.hasData)
                         Text(
-                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          snapshot.data! >= 0
+                              ? 'Max available: $maxAvailable'
+                              : 'Unlimited',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade600,
@@ -1730,7 +2078,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color:
-                              _theatrePeople > maxPeople && _deviceCapacity > 0 ? Colors.red : null,
+                              _theatrePeople > maxPeople && _deviceCapacity > 0
+                                  ? Colors.red
+                                  : null,
                         ),
                       ),
                       IconButton(
@@ -1738,10 +2088,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                         onPressed:
                             _theatrePeople < maxPeople || _deviceCapacity == 0
                                 ? () async {
-                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
-                                    final available = await _getMaxAvailableForSelectedTime();
+                                  if (_deviceCapacity > 0 &&
+                                      _selectedTimeSlot != null) {
+                                    final available =
+                                        await _getMaxAvailableForSelectedTime();
                                     if (available < _theatrePeople + 1) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
                                           content: Text(
                                             'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase people count.',
@@ -1909,7 +2263,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Time Slot', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const Text(
+          'Time Slot',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         if (_deviceCapacity > 0) ...[
           const SizedBox(height: 8),
           Text(
@@ -1942,17 +2299,25 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       final availableSlots =
                           _deviceCapacity > 0
                               ? (cachedSlots ??
-                                  (_loadingSlots ? null : -2)) // -2 means not loaded yet
+                                  (_loadingSlots
+                                      ? null
+                                      : -2)) // -2 means not loaded yet
                               : -1; // -1 means unlimited
 
                       // Show loading spinner only on initial load, not on every rebuild
-                      final isLoading = _deviceCapacity > 0 && cachedSlots == null && _loadingSlots;
+                      final isLoading =
+                          _deviceCapacity > 0 &&
+                          cachedSlots == null &&
+                          _loadingSlots;
 
                       // Only disable if capacity > 0 AND all slots are booked (availableSlots == 0)
                       // OR if capacity == 0 AND time slot is marked as booked (old behavior)
                       // availableSlots == -1 means unlimited (capacity == 0)
                       // availableSlots == -2 means not loaded yet (show as available to avoid blocking)
-                      final isFullyBooked = _deviceCapacity > 0 ? (availableSlots == 0) : isBooked;
+                      final isFullyBooked =
+                          _deviceCapacity > 0
+                              ? (availableSlots == 0)
+                              : isBooked;
                       final canSelect = !isFullyBooked;
 
                       return FilterChip(
@@ -1967,11 +2332,17 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                                 const SizedBox(
                                   width: 12,
                                   height: 12,
-                                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                  ),
                                 )
-                              else if (availableSlots != null && availableSlots >= 0)
+                              else if (availableSlots != null &&
+                                  availableSlots >= 0)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color:
                                         availableSlots > 0
@@ -2000,7 +2371,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                                 : (canSelect
                                     ? (selected) {
                                       setState(() {
-                                        _selectedTimeSlot = selected ? slot12Hour : null;
+                                        _selectedTimeSlot =
+                                            selected ? slot12Hour : null;
                                       });
                                     }
                                     : null),
@@ -2011,11 +2383,16 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                               isFullyBooked
                                   ? Colors.red.shade700
                                   : (isSelected ? Colors.white : Colors.black),
-                          decoration: isFullyBooked ? TextDecoration.lineThrough : null,
+                          decoration:
+                              isFullyBooked ? TextDecoration.lineThrough : null,
                         ),
                         avatar:
                             isFullyBooked
-                                ? Icon(Icons.block, size: 16, color: Colors.red.shade700)
+                                ? Icon(
+                                  Icons.block,
+                                  size: 16,
+                                  color: Colors.red.shade700,
+                                )
                                 : null,
                         tooltip:
                             isFullyBooked
@@ -2055,11 +2432,14 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                           _deviceCapacity > 0 && _selectedServiceType != null
                               ? DeviceCapacityService.getAvailableSlots(
                                 deviceType: _selectedServiceType!,
-                                date: DateFormat('yyyy-MM-dd').format(_selectedDate),
+                                date: DateFormat(
+                                  'yyyy-MM-dd',
+                                ).format(_selectedDate),
                                 timeSlot:
                                     '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}',
                                 durationHours:
-                                    _selectedServiceType == 'PS4' || _selectedServiceType == 'PS5'
+                                    _selectedServiceType == 'PS4' ||
+                                            _selectedServiceType == 'PS5'
                                         ? _durationHours + (_minutes / 60.0)
                                         : _selectedServiceType == 'Simulator' ||
                                             _selectedServiceType == 'VR'
@@ -2070,7 +2450,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       builder: (context, snapshot) {
                         // For custom time, we still use FutureBuilder since it's dynamic
                         // But cache will help avoid repeated queries
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -2080,7 +2461,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                                 const SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ],
                             ],
@@ -2090,14 +2473,19 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                         final availableSlots = snapshot.data ?? 0;
                         final timeStr = _customTime!.format(context);
 
-                        if (_deviceCapacity > 0 && snapshot.hasData && availableSlots >= 0) {
+                        if (_deviceCapacity > 0 &&
+                            snapshot.hasData &&
+                            availableSlots >= 0) {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(timeStr),
                               const SizedBox(height: 4),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color:
                                       availableSlots > 0
@@ -2155,7 +2543,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if ((_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') &&
+          if ((_selectedServiceType == 'PS4' ||
+                  _selectedServiceType == 'PS5') &&
               _consoleCount > 1) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2174,15 +2563,24 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Console count:', style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
-                Text('$_consoleCount', style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+                Text(
+                  'Console count:',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                ),
+                Text(
+                  '$_consoleCount',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                ),
               ],
             ),
             const Divider(height: 24),
-          ] else if ((_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') &&
+          ] else if ((_selectedServiceType == 'VR' ||
+                  _selectedServiceType == 'Simulator') &&
               _numberOfPeople > 1) ...[
             FutureBuilder<double>(
-              future: BookingLogicService.getPricePerPerson(deviceType: _selectedServiceType!),
+              future: BookingLogicService.getPricePerPerson(
+                deviceType: _selectedServiceType!,
+              ),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return const SizedBox.shrink();
@@ -2195,11 +2593,17 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       children: [
                         Text(
                           'Price per person:',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                         Text(
                           'Rs ${pricePerPerson.toStringAsFixed(2)}',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                       ],
                     ),
@@ -2209,11 +2613,17 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       children: [
                         Text(
                           'Number of people:',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                         Text(
                           '$_numberOfPeople',
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade700,
+                          ),
                         ),
                       ],
                     ),
