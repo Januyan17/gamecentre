@@ -654,7 +654,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                   : Future.value(-1), // -1 means unlimited
                                           builder: (context, slotsSnapshot) {
                                             // Show loading state while fetching
-                                            if (slotsSnapshot.connectionState == ConnectionState.waiting) {
+                                            if (slotsSnapshot.connectionState ==
+                                                ConnectionState.waiting) {
                                               return FilterChip(
                                                 selected: false,
                                                 label: Row(
@@ -666,7 +667,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                       const SizedBox(
                                                         width: 12,
                                                         height: 12,
-                                                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                                                        child: CircularProgressIndicator(
+                                                          strokeWidth: 1.5,
+                                                        ),
                                                       ),
                                                     ],
                                                   ],
@@ -675,7 +678,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                 disabledColor: Colors.purple.shade100,
                                               );
                                             }
-                                            
+
                                             final availableSlots = slotsSnapshot.data ?? 0;
                                             // Only mark as fully booked if capacity > 0 AND all slots are booked
                                             // OR if capacity == 0 AND time slot is marked as booked (old behavior)
@@ -689,7 +692,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Text(slot12Hour),
-                                                  if (capacity > 0 && slotsSnapshot.hasData && availableSlots >= 0) ...[
+                                                  if (capacity > 0 &&
+                                                      slotsSnapshot.hasData &&
+                                                      availableSlots >= 0) ...[
                                                     const SizedBox(width: 4),
                                                     Container(
                                                       padding: const EdgeInsets.symmetric(
@@ -699,8 +704,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                       decoration: BoxDecoration(
                                                         color:
                                                             availableSlots > 0
-                                                                ? Colors.green.shade100
-                                                                : Colors.red.shade100,
+                                                                ? Colors.black
+                                                                : Colors.black,
                                                         borderRadius: BorderRadius.circular(4),
                                                       ),
                                                       child: Text(
@@ -710,8 +715,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                           fontWeight: FontWeight.bold,
                                                           color:
                                                               availableSlots > 0
-                                                                  ? Colors.green.shade900
-                                                                  : Colors.red.shade900,
+                                                                  ? Colors.white
+                                                                  : Colors.white,
                                                         ),
                                                       ),
                                                     ),
@@ -719,7 +724,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                 ],
                                               ),
                                               onSelected: null, // Read-only in availability dialog
-                                              disabledColor: Colors.purple.shade100,
+                                              disabledColor: Colors.white,
                                               labelStyle: TextStyle(
                                                 color:
                                                     isFullyBooked
