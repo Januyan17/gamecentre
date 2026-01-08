@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import '../services/price_calculator.dart';
+import '../services/device_capacity_service.dart';
 import 'common_scenarios_page.dart';
 
 /// Pricing Settings Page
@@ -205,6 +206,9 @@ class _PricingSettingsPageState extends State<PricingSettingsPage> {
 
       // Clear price cache so new prices are loaded
       PriceCalculator.clearCache();
+
+      // Clear device capacity cache so new capacity is loaded
+      DeviceCapacityService.clearCapacityCache();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

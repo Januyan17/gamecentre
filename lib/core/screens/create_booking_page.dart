@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../services/booking_logic_service.dart';
@@ -52,6 +53,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
   int _deviceCapacity = 0;
   bool _loadingCapacity = false;
 
+  // Pre-loaded available slots for each time slot (to avoid FutureBuilder spinners)
+  Map<String, int> _availableSlotsCache = {};
+  bool _loadingSlots = false;
+
   // Common scenarios
   List<Map<String, dynamic>> _commonScenarios = [];
   bool _loadingScenarios = true;
@@ -72,17 +77,22 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
   Future<void> _loadDeviceCapacity() async {
     if (_selectedServiceType == null) return;
-    
+
     setState(() {
       _loadingCapacity = true;
     });
-    
+
     try {
       final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
       setState(() {
         _deviceCapacity = capacity;
         _loadingCapacity = false;
       });
+
+      // Preload slots after capacity is loaded
+      if (capacity > 0) {
+        _preloadAvailableSlots();
+      }
     } catch (e) {
       debugPrint('Error loading device capacity: $e');
       setState(() {
@@ -170,7 +180,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     }
   }
 
-  // Load booked time slots for the selected date and service type
+  // Load booked time slots for the selected date and service
   Future<void> _loadBookedTimeSlots() async {
     if (_selectedServiceType == null) return;
 
@@ -443,6 +453,130 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     _calculatePrice();
     _loadBookedTimeSlots();
     _loadDeviceCapacity();
+    _preloadAvailableSlots(); // Preload slots for new service type
+  }
+
+  /// Get max available slots for the selected time slot
+  Future<int> _getMaxAvailableForSelectedTime() async {
+    if (_selectedServiceType == null || _deviceCapacity == 0) {
+      return _deviceCapacity > 0 ? _deviceCapacity : -1;
+    }
+
+    if (_selectedTimeSlot == null && !_useCustomTime) {
+      return _deviceCapacity > 0 ? _deviceCapacity : -1;
+    }
+
+    try {
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      String timeSlot24Hour;
+
+      if (_useCustomTime && _customTime != null) {
+        timeSlot24Hour =
+            '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}';
+      } else if (_selectedTimeSlot != null) {
+        timeSlot24Hour = _formatTime24Hour(_selectedTimeSlot!);
+      } else {
+        return _deviceCapacity > 0 ? _deviceCapacity : -1;
+      }
+
+      double durationHours = 1.0;
+      if (_selectedServiceType == 'PS4' || _selectedServiceType == 'PS5') {
+        durationHours = _durationHours + (_minutes / 60.0);
+      } else if (_selectedServiceType == 'Simulator' || _selectedServiceType == 'VR') {
+        durationHours = (_numberOfPeople * 5) / 60.0;
+      } else if (_selectedServiceType == 'Theatre') {
+        durationHours = _theatreHours.toDouble();
+      }
+
+      return await DeviceCapacityService.getAvailableSlots(
+        deviceType: _selectedServiceType!,
+        date: dateId,
+        timeSlot: timeSlot24Hour,
+        durationHours: durationHours,
+      );
+    } catch (e) {
+      debugPrint('Error getting max available: $e');
+      return _deviceCapacity > 0 ? _deviceCapacity : -1;
+    }
+  }
+
+  /// Preload available slots for all time slots to avoid FutureBuilder spinners
+  Future<void> _preloadAvailableSlots() async {
+    if (_selectedServiceType == null || _deviceCapacity == 0) {
+      return; // No need to preload if capacity is 0 (unlimited)
+    }
+
+    setState(() {
+      _loadingSlots = true;
+    });
+
+    try {
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final timeSlots24Hour = [
+        '09:00',
+        '09:30',
+        '10:00',
+        '10:30',
+        '11:00',
+        '11:30',
+        '12:00',
+        '12:30',
+        '13:00',
+        '13:30',
+        '14:00',
+        '14:30',
+        '15:00',
+        '15:30',
+        '16:00',
+        '16:30',
+        '17:00',
+        '17:30',
+        '18:00',
+        '18:30',
+        '19:00',
+        '19:30',
+        '20:00',
+        '20:30',
+        '21:00',
+        '21:30',
+        '22:00',
+        '22:30',
+        '23:00',
+      ];
+
+      const slotCheckDurationHours = 0.5; // 30 minutes per slot
+
+      // Load all slots in parallel
+      final futures = timeSlots24Hour.map((slot) async {
+        final availableSlots = await DeviceCapacityService.getAvailableSlots(
+          deviceType: _selectedServiceType!,
+          date: dateId,
+          timeSlot: slot,
+          durationHours: slotCheckDurationHours,
+        );
+        return MapEntry(slot, availableSlots);
+      });
+
+      final results = await Future.wait(futures);
+      final newCache = <String, int>{};
+      for (var entry in results) {
+        newCache[entry.key] = entry.value;
+      }
+
+      if (mounted) {
+        setState(() {
+          _availableSlotsCache = newCache;
+          _loadingSlots = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error preloading available slots: $e');
+      if (mounted) {
+        setState(() {
+          _loadingSlots = false;
+        });
+      }
+    }
   }
 
   Future<void> _createBooking() async {
@@ -468,12 +602,12 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     }
 
     if (phoneNumber.isNotEmpty) {
-      // Basic phone validation (should contain only digits and be reasonable length)
+      // Phone validation - must be exactly 10 digits
       final phoneDigits = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
-      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      if (phoneDigits.length != 10) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please enter a valid phone number (7-15 digits)'),
+            content: Text('Please enter a valid 10-digit mobile number'),
             backgroundColor: Colors.red,
           ),
         );
@@ -528,6 +662,56 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       }
 
       // Check for conflicts and capacity
+      // First check if we have enough slots for the requested count
+      if (_deviceCapacity > 0) {
+        final availableSlots = await DeviceCapacityService.getAvailableSlots(
+          deviceType: _selectedServiceType!,
+          date: dateId,
+          timeSlot: timeSlot24Hour,
+          durationHours: durationHours,
+        );
+
+        // Determine required count based on service type
+        int requiredCount = 1;
+        if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') {
+          requiredCount = _consoleCount;
+        } else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') {
+          requiredCount = _numberOfPeople;
+        } else if (_selectedServiceType == 'Theatre') {
+          requiredCount = _theatrePeople;
+        }
+
+        if (availableSlots < requiredCount) {
+          if (mounted) {
+            Navigator.pop(context); // Close loading
+
+            final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
+            String errorMessage;
+            if (availableSlots == 0) {
+              errorMessage =
+                  'All $capacity ${_selectedServiceType} slots are booked for this time. Please choose a different time.';
+            } else {
+              final countLabel =
+                  _selectedServiceType == 'PS5' || _selectedServiceType == 'PS4'
+                      ? 'console${requiredCount > 1 ? 's' : ''}'
+                      : 'slot${requiredCount > 1 ? 's' : ''}';
+              errorMessage =
+                  'Only $availableSlots ${_selectedServiceType} slot${availableSlots > 1 ? 's' : ''} available, but you need $requiredCount $countLabel. Please reduce the count or choose a different time.';
+            }
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(errorMessage),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Check for conflicts (for other service types or when capacity is 0)
       final hasConflict = await BookingLogicService.hasTimeConflict(
         deviceType: _selectedServiceType!,
         date: dateId,
@@ -538,7 +722,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       if (hasConflict) {
         if (mounted) {
           Navigator.pop(context); // Close loading
-          
+
           // Get capacity info for better error message
           final capacity = await DeviceCapacityService.getDeviceCapacity(_selectedServiceType!);
           final availableSlots = await DeviceCapacityService.getAvailableSlots(
@@ -547,14 +731,15 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             timeSlot: timeSlot24Hour,
             durationHours: durationHours,
           );
-          
+
           String errorMessage;
           if (capacity > 0 && availableSlots == 0) {
-            errorMessage = 'All ${capacity} ${_selectedServiceType} slots are booked for this time. Please choose a different time.';
+            errorMessage =
+                'All ${capacity} ${_selectedServiceType} slots are booked for this time. Please choose a different time.';
           } else {
             errorMessage = 'This time slot conflicts with an existing booking or active session.';
           }
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMessage),
@@ -906,6 +1091,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
                   const SizedBox(height: 24),
 
+                  _buildTimeSlotSection(),
+
+                  const SizedBox(height: 24),
+
                   // Device Capacity Info
                   if (_selectedServiceType != null && !_loadingCapacity)
                     _buildCapacityInfoSection(),
@@ -918,9 +1107,6 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   const SizedBox(height: 24),
 
                   // Time Slot Selection
-                  _buildTimeSlotSection(),
-
-                  const SizedBox(height: 24),
 
                   // Price Display
                   if (_priceCalculated) _buildPriceSection(),
@@ -993,6 +1179,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                 _selectedTimeSlot = null; // Clear time slot when date changes
               });
               _loadBookedTimeSlots(); // Reload booked slots for new date
+              _preloadAvailableSlots(); // Reload available slots for new date
             }
           },
           child: Container(
@@ -1063,11 +1250,15 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           controller: _phoneController,
           decoration: const InputDecoration(
             labelText: 'Phone Number',
-            hintText: 'Enter phone number (optional, 7-15 digits)',
+            hintText: 'Enter 10-digit mobile number (optional)',
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.phone),
+            counterText: '',
           ),
           keyboardType: TextInputType.phone,
+          maxLength: 10,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
         ),
       ],
     );
@@ -1144,40 +1335,100 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         ),
         const SizedBox(height: 16),
         if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') ...[
-          // Console Count
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Number of Consoles:'),
-              Row(
+          // Console Count - restricted by available slots
+          FutureBuilder<int>(
+            future: _getMaxAvailableForSelectedTime(),
+            builder: (context, snapshot) {
+              final maxAvailable =
+                  snapshot.hasData && snapshot.data! >= 0
+                      ? snapshot.data!
+                      : (_deviceCapacity > 0 ? _deviceCapacity : 999);
+
+              // Ensure console count doesn't exceed available slots
+              final maxConsoles = maxAvailable > 0 ? maxAvailable : 1;
+              if (_consoleCount > maxConsoles && _deviceCapacity > 0) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                    _consoleCount = maxConsoles;
+                  });
+                });
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () {
-                      if (_consoleCount > 1) {
-                        setState(() {
-                          _consoleCount--;
-                        });
-                        _calculatePrice();
-                      }
-                    },
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Number of Consoles:'),
+                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                        Text(
+                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
-                  Text(
-                    '$_consoleCount',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () {
-                      setState(() {
-                        _consoleCount++;
-                      });
-                      _calculatePrice();
-                    },
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (_consoleCount > 1) {
+                            setState(() {
+                              _consoleCount--;
+                            });
+                            _calculatePrice();
+                          }
+                        },
+                      ),
+                      Text(
+                        '$_consoleCount',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _consoleCount > maxConsoles && _deviceCapacity > 0
+                                  ? Colors.red
+                                  : null,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed:
+                            _consoleCount < maxConsoles || _deviceCapacity == 0
+                                ? () async {
+                                  // Check available slots before allowing increase
+                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
+                                    final available = await _getMaxAvailableForSelectedTime();
+                                    if (available < _consoleCount + 1) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase console count.',
+                                          ),
+                                          backgroundColor: Colors.orange,
+                                          duration: const Duration(seconds: 3),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                  }
+                                  setState(() {
+                                    _consoleCount++;
+                                  });
+                                  _calculatePrice();
+                                }
+                                : null,
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           // Duration Hours
@@ -1288,39 +1539,97 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             ],
           ),
         ] else if (_selectedServiceType == 'VR' || _selectedServiceType == 'Simulator') ...[
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Number of People:'),
-              Row(
+          FutureBuilder<int>(
+            future: _getMaxAvailableForSelectedTime(),
+            builder: (context, snapshot) {
+              final maxAvailable =
+                  snapshot.hasData && snapshot.data! >= 0
+                      ? snapshot.data!
+                      : (_deviceCapacity > 0 ? _deviceCapacity : 999);
+
+              final maxPeople = maxAvailable > 0 ? maxAvailable : 1;
+              if (_numberOfPeople > maxPeople && _deviceCapacity > 0) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                    _numberOfPeople = maxPeople;
+                  });
+                });
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () {
-                      if (_numberOfPeople > 1) {
-                        setState(() {
-                          _numberOfPeople--;
-                        });
-                        _calculatePrice();
-                      }
-                    },
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Number of People:'),
+                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                        Text(
+                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
-                  Text(
-                    '$_numberOfPeople',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () {
-                      setState(() {
-                        _numberOfPeople++;
-                      });
-                      _calculatePrice();
-                    },
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (_numberOfPeople > 1) {
+                            setState(() {
+                              _numberOfPeople--;
+                            });
+                            _calculatePrice();
+                          }
+                        },
+                      ),
+                      Text(
+                        '$_numberOfPeople',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _numberOfPeople > maxPeople && _deviceCapacity > 0
+                                  ? Colors.red
+                                  : null,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed:
+                            _numberOfPeople < maxPeople || _deviceCapacity == 0
+                                ? () async {
+                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
+                                    final available = await _getMaxAvailableForSelectedTime();
+                                    if (available < _numberOfPeople + 1) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase people count.',
+                                          ),
+                                          backgroundColor: Colors.orange,
+                                          duration: const Duration(seconds: 3),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                  }
+                                  setState(() {
+                                    _numberOfPeople++;
+                                  });
+                                  _calculatePrice();
+                                }
+                                : null,
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           Text(
@@ -1367,39 +1676,95 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             ],
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Number of People:'),
-              Row(
+          FutureBuilder<int>(
+            future: _getMaxAvailableForSelectedTime(),
+            builder: (context, snapshot) {
+              final maxAvailable =
+                  snapshot.hasData && snapshot.data! >= 0
+                      ? snapshot.data!
+                      : (_deviceCapacity > 0 ? _deviceCapacity : 999);
+
+              final maxPeople = maxAvailable > 0 ? maxAvailable : 1;
+              if (_theatrePeople > maxPeople && _deviceCapacity > 0) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                    _theatrePeople = maxPeople;
+                  });
+                });
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () {
-                      if (_theatrePeople > 1) {
-                        setState(() {
-                          _theatrePeople--;
-                        });
-                        _calculatePrice();
-                      }
-                    },
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Number of People:'),
+                      if (_deviceCapacity > 0 && _selectedTimeSlot != null && snapshot.hasData)
+                        Text(
+                          snapshot.data! >= 0 ? 'Max available: $maxAvailable' : 'Unlimited',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
-                  Text(
-                    '$_theatrePeople',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () {
-                      setState(() {
-                        _theatrePeople++;
-                      });
-                      _calculatePrice();
-                    },
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        onPressed: () {
+                          if (_theatrePeople > 1) {
+                            setState(() {
+                              _theatrePeople--;
+                            });
+                            _calculatePrice();
+                          }
+                        },
+                      ),
+                      Text(
+                        '$_theatrePeople',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              _theatrePeople > maxPeople && _deviceCapacity > 0 ? Colors.red : null,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        onPressed:
+                            _theatrePeople < maxPeople || _deviceCapacity == 0
+                                ? () async {
+                                  if (_deviceCapacity > 0 && _selectedTimeSlot != null) {
+                                    final available = await _getMaxAvailableForSelectedTime();
+                                    if (available < _theatrePeople + 1) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Only $available slot${available > 1 ? 's' : ''} available at selected time. Cannot increase people count.',
+                                          ),
+                                          backgroundColor: Colors.orange,
+                                          duration: const Duration(seconds: 3),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                  }
+                                  setState(() {
+                                    _theatrePeople++;
+                                  });
+                                  _calculatePrice();
+                                }
+                                : null,
+                      ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              );
+            },
           ),
         ],
       ],
@@ -1536,12 +1901,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
     final List<String> _timeSlots =
         _timeSlots24Hour.map((slot) => _formatTime12Hour(slot)).toList();
 
-    // Use fixed 30-minute (0.5 hour) duration for checking availability of each time slot
-    // This ensures we check availability for that specific time slot only, not overlapping with adjacent slots
-    // The user's actual duration will be checked when they try to create the booking
-    const double slotCheckDurationHours = 0.5;
-
-    final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+    // Preload slots if not already loaded
+    if (_deviceCapacity > 0 && _availableSlotsCache.isEmpty && !_loadingSlots) {
+      _preloadAvailableSlots();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1551,7 +1914,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           const SizedBox(height: 8),
           Text(
             'Available slots shown for each time (Total: $_deviceCapacity devices)',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontStyle: FontStyle.italic,
+            ),
           ),
         ],
         const SizedBox(height: 16),
@@ -1570,81 +1937,94 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       // Check booked slots using 24-hour format
                       final isBooked = _bookedTimeSlots.contains(slot24Hour);
 
-                      return FutureBuilder<int>(
-                        future: _deviceCapacity > 0
-                            ? DeviceCapacityService.getAvailableSlots(
-                                deviceType: _selectedServiceType!,
-                                date: dateId,
-                                timeSlot: slot24Hour,
-                                durationHours: slotCheckDurationHours, // Use fixed 1-hour for display
-                              )
-                            : Future.value(999),
-                        builder: (context, snapshot) {
-                          final availableSlots = snapshot.data ?? 0;
-                          // Only disable if capacity > 0 AND all slots are booked (availableSlots == 0)
-                          // OR if capacity == 0 AND time slot is marked as booked (old behavior)
-                          final isFullyBooked = _deviceCapacity > 0 
-                              ? availableSlots == 0 
-                              : isBooked;
-                          final canSelect = !isFullyBooked;
+                      // Use cached value if available, otherwise show loading only on initial load
+                      final cachedSlots = _availableSlotsCache[slot24Hour];
+                      final availableSlots =
+                          _deviceCapacity > 0
+                              ? (cachedSlots ??
+                                  (_loadingSlots ? null : -2)) // -2 means not loaded yet
+                              : -1; // -1 means unlimited
 
-                          return FilterChip(
-                            selected: isSelected,
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(slot12Hour),
-                                if (_deviceCapacity > 0 && snapshot.hasData) ...[
-                                  const SizedBox(width: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: availableSlots > 0
-                                          ? Colors.green.shade100
-                                          : Colors.red.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '$availableSlots',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: availableSlots > 0
-                                            ? Colors.green.shade900
-                                            : Colors.red.shade900,
-                                      ),
+                      // Show loading spinner only on initial load, not on every rebuild
+                      final isLoading = _deviceCapacity > 0 && cachedSlots == null && _loadingSlots;
+
+                      // Only disable if capacity > 0 AND all slots are booked (availableSlots == 0)
+                      // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                      // availableSlots == -1 means unlimited (capacity == 0)
+                      // availableSlots == -2 means not loaded yet (show as available to avoid blocking)
+                      final isFullyBooked = _deviceCapacity > 0 ? (availableSlots == 0) : isBooked;
+                      final canSelect = !isFullyBooked;
+
+                      return FilterChip(
+                        selected: isSelected,
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(slot12Hour),
+                            if (_deviceCapacity > 0) ...[
+                              const SizedBox(width: 4),
+                              if (isLoading)
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 1.5),
+                                )
+                              else if (availableSlots != null && availableSlots >= 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        availableSlots > 0
+                                            ? Colors.green.shade100
+                                            : Colors.red.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '$availableSlots',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          availableSlots > 0
+                                              ? Colors.green.shade900
+                                              : Colors.red.shade900,
                                     ),
                                   ),
-                                ],
-                              ],
-                            ),
-                            onSelected: canSelect
-                                ? (selected) {
-                                    setState(() {
-                                      _selectedTimeSlot = selected ? slot12Hour : null;
-                                    });
-                                  }
-                                : null,
-                            disabledColor: Colors.red.shade100,
-                            selectedColor: Colors.green.shade300,
-                            labelStyle: TextStyle(
-                              color: isFullyBooked
+                                ),
+                            ],
+                          ],
+                        ),
+                        onSelected:
+                            isLoading
+                                ? null
+                                : (canSelect
+                                    ? (selected) {
+                                      setState(() {
+                                        _selectedTimeSlot = selected ? slot12Hour : null;
+                                      });
+                                    }
+                                    : null),
+                        disabledColor: Colors.red.shade100,
+                        selectedColor: Colors.green.shade300,
+                        labelStyle: TextStyle(
+                          color:
+                              isFullyBooked
                                   ? Colors.red.shade700
                                   : (isSelected ? Colors.white : Colors.black),
-                              decoration: isFullyBooked ? TextDecoration.lineThrough : null,
-                            ),
-                            avatar: isFullyBooked
+                          decoration: isFullyBooked ? TextDecoration.lineThrough : null,
+                        ),
+                        avatar:
+                            isFullyBooked
                                 ? Icon(Icons.block, size: 16, color: Colors.red.shade700)
                                 : null,
-                            tooltip: isFullyBooked
+                        tooltip:
+                            isFullyBooked
                                 ? _deviceCapacity > 0
                                     ? 'All $_deviceCapacity slots are booked for this time'
                                     : 'This time slot is already booked'
                                 : _deviceCapacity > 0
-                                    ? '$availableSlots of $_deviceCapacity slots available'
-                                    : 'Available',
-                          );
-                        },
+                                ? '$availableSlots of $_deviceCapacity slots available'
+                                : 'Available',
                       );
                     }).toList(),
               ),
@@ -1668,58 +2048,84 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           const SizedBox(height: 8),
           ListTile(
             title: const Text('Select Time'),
-            subtitle: _customTime != null
-                ? FutureBuilder<int>(
-                    future: _deviceCapacity > 0 && _selectedServiceType != null
-                        ? DeviceCapacityService.getAvailableSlots(
-                            deviceType: _selectedServiceType!,
-                            date: DateFormat('yyyy-MM-dd').format(_selectedDate),
-                            timeSlot: '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}',
-                            durationHours: _selectedServiceType == 'PS4' || _selectedServiceType == 'PS5'
-                                ? _durationHours + (_minutes / 60.0)
-                                : _selectedServiceType == 'Simulator' || _selectedServiceType == 'VR'
-                                    ? (_numberOfPeople * 5) / 60.0
-                                    : _theatreHours.toDouble(),
-                          )
-                        : Future.value(999),
-                    builder: (context, snapshot) {
-                      final availableSlots = snapshot.data ?? 0;
-                      final timeStr = _customTime!.format(context);
-                      
-                      if (_deviceCapacity > 0 && snapshot.hasData) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(timeStr),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: availableSlots > 0
-                                    ? Colors.green.shade100
-                                    : Colors.red.shade100,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                availableSlots > 0
-                                    ? '$availableSlots of $_deviceCapacity slots available'
-                                    : 'All $_deviceCapacity slots booked',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: availableSlots > 0
-                                      ? Colors.green.shade900
-                                      : Colors.red.shade900,
+            subtitle:
+                _customTime != null
+                    ? FutureBuilder<int>(
+                      future:
+                          _deviceCapacity > 0 && _selectedServiceType != null
+                              ? DeviceCapacityService.getAvailableSlots(
+                                deviceType: _selectedServiceType!,
+                                date: DateFormat('yyyy-MM-dd').format(_selectedDate),
+                                timeSlot:
+                                    '${_customTime!.hour.toString().padLeft(2, '0')}:${_customTime!.minute.toString().padLeft(2, '0')}',
+                                durationHours:
+                                    _selectedServiceType == 'PS4' || _selectedServiceType == 'PS5'
+                                        ? _durationHours + (_minutes / 60.0)
+                                        : _selectedServiceType == 'Simulator' ||
+                                            _selectedServiceType == 'VR'
+                                        ? (_numberOfPeople * 5) / 60.0
+                                        : _theatreHours.toDouble(),
+                              )
+                              : Future.value(-1), // -1 means unlimited
+                      builder: (context, snapshot) {
+                        // For custom time, we still use FutureBuilder since it's dynamic
+                        // But cache will help avoid repeated queries
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_customTime!.format(context)),
+                              if (_deviceCapacity > 0) ...[
+                                const SizedBox(width: 8),
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ],
+                            ],
+                          );
+                        }
+
+                        final availableSlots = snapshot.data ?? 0;
+                        final timeStr = _customTime!.format(context);
+
+                        if (_deviceCapacity > 0 && snapshot.hasData && availableSlots >= 0) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(timeStr),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color:
+                                      availableSlots > 0
+                                          ? Colors.green.shade100
+                                          : Colors.red.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  availableSlots > 0
+                                      ? '$availableSlots of $_deviceCapacity slots available'
+                                      : 'All $_deviceCapacity slots booked',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color:
+                                        availableSlots > 0
+                                            ? Colors.green.shade900
+                                            : Colors.red.shade900,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        );
-                      }
-                      return Text(timeStr);
-                    },
-                  )
-                : const Text('Tap to select'),
+                            ],
+                          );
+                        }
+                        return Text(timeStr);
+                      },
+                    )
+                    : const Text('Tap to select'),
             trailing: const Icon(Icons.access_time),
             onTap: () async {
               final time = await showTimePicker(

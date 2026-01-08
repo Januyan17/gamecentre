@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../providers/session_provider.dart';
 import '../services/session_service.dart';
+import '../services/device_capacity_service.dart';
 import 'session_detail_page.dart';
 
 class CreateSessionPage extends StatefulWidget {
@@ -339,81 +340,41 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
       // Get default duration for the selected service type
       final defaultDuration = _getDefaultDuration(_selectedServiceType!);
 
-      // IMPORTANT: Only check bookings for the SAME service type
-      // Different service types (e.g., PS5 vs Theatre) don't conflict
       final selectedServiceType = _selectedServiceType!.trim();
-      final bookingsSnapshot =
-          await FirebaseFirestore.instance
-              .collection('bookings')
-              .where('date', isEqualTo: dateId)
-              .where('serviceType', isEqualTo: selectedServiceType)
-              .get();
 
-      // Check if current time slot is booked
-      for (var doc in bookingsSnapshot.docs) {
-        final data = doc.data();
-        final bookedServiceType = (data['serviceType'] as String? ?? '').trim();
+      // Check device capacity first
+      final capacity = await DeviceCapacityService.getDeviceCapacity(selectedServiceType);
+      
+      if (capacity > 0) {
+        // Use capacity-based checking: check if all slots are booked
+        final canBook = await DeviceCapacityService.canMakeBooking(
+          deviceType: selectedServiceType,
+          date: dateId,
+          timeSlot: currentTime24Hour,
+          durationHours: defaultDuration,
+        );
 
-        // Double-check: Only process bookings for the same service type
-        // This is a safeguard in case the query doesn't filter correctly
-        if (bookedServiceType.toLowerCase() != selectedServiceType.toLowerCase()) {
-          continue; // Skip bookings for different service types
-        }
+        if (!canBook) {
+          // All slots are booked
+          final availableSlots = await DeviceCapacityService.getAvailableSlots(
+            deviceType: selectedServiceType,
+            date: dateId,
+            timeSlot: currentTime24Hour,
+            durationHours: defaultDuration,
+          );
 
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-
-        // Only check conflicts with 'pending', 'confirmed', and 'done' bookings
-        // 'cancelled' bookings don't block
-        if (status == 'cancelled') continue;
-
-        final bookedTimeSlot = data['timeSlot'] as String? ?? '';
-        if (bookedTimeSlot.isEmpty) continue;
-
-        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-
-        // Parse booked time slot (e.g., "14:00" or "14:30")
-        final bookedParts = bookedTimeSlot.split(':');
-        if (bookedParts.length != 2) continue;
-
-        final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
-        final bookedMinute = int.tryParse(bookedParts[1]) ?? 0;
-
-        // Convert to decimal hours for accurate comparison
-        final bookedStartDecimal = bookedHour + (bookedMinute / 60.0);
-        final bookedEndDecimal = bookedStartDecimal + bookedDuration;
-
-        // Convert current time to decimal hours
-        final currentStartDecimal = currentHour + (currentMinute / 60.0);
-        final currentEndDecimal = currentStartDecimal + defaultDuration;
-
-        // Check if our session time overlaps with booked time range
-        if ((currentStartDecimal >= bookedStartDecimal && currentStartDecimal < bookedEndDecimal) ||
-            (currentEndDecimal > bookedStartDecimal && currentEndDecimal <= bookedEndDecimal) ||
-            (currentStartDecimal <= bookedStartDecimal && currentEndDecimal >= bookedEndDecimal)) {
-          // Format booked end time in 12-hour format
-          final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
-          final bookedEndMinute =
-              ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
-          final bookedEndTime24Hour =
-              '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
-          final bookedEndTime12Hour = _formatTime12Hour(bookedEndTime24Hour);
-
-          // Format current time and booked time in 12-hour format
           final currentTime12Hour = _formatTime12Hour(currentTime24Hour);
-          final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
-
-          // Calculate our end time
-          final ourEndHour = (currentStartDecimal + defaultDuration).floor();
-          final ourEndMinute = ((currentStartDecimal + defaultDuration - ourEndHour) * 60).round();
+          final ourEndHour = (currentHour + defaultDuration).floor();
+          final ourEndMinute = ((currentHour + (currentMinute / 60.0) + defaultDuration - ourEndHour) * 60).round();
           final ourEndTime24Hour =
               '${ourEndHour.toString().padLeft(2, '0')}:${ourEndMinute.toString().padLeft(2, '0')}';
           final ourEndTime12Hour = _formatTime12Hour(ourEndTime24Hour);
 
           final errorMessage =
-              '⚠️ Cannot create session: This time slot is already booked for $selectedServiceType.\n\n'
+              '⚠️ Cannot create session: All $capacity $selectedServiceType slots are fully booked at this time.\n\n'
               'Your session time: $currentTime12Hour - $ourEndTime12Hour (${defaultDuration.toStringAsFixed(1)}h)\n'
-              'Existing booking: $bookedServiceType at $bookedTime12Hour - $bookedEndTime12Hour (${bookedDuration.toStringAsFixed(1)}h)\n\n'
-              'Please wait until the booking ends or choose a different service type.\n'
+              'Available slots: $availableSlots of $capacity\n\n'
+              'Please wait until a slot becomes available or choose a different service type.\n'
               'Note: Different service types (e.g., PS5 and Theatre) can be booked at the same time.';
 
           if (showError && mounted) {
@@ -429,6 +390,96 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
           }
 
           throw Exception(errorMessage);
+        }
+      } else {
+        // Capacity is 0 (unlimited) - use old overlap-based checking for backward compatibility
+        final bookingsSnapshot =
+            await FirebaseFirestore.instance
+                .collection('bookings')
+                .where('date', isEqualTo: dateId)
+                .where('serviceType', isEqualTo: selectedServiceType)
+                .get();
+
+        // Check if current time slot is booked
+        for (var doc in bookingsSnapshot.docs) {
+          final data = doc.data();
+          final bookedServiceType = (data['serviceType'] as String? ?? '').trim();
+
+          // Double-check: Only process bookings for the same service type
+          if (bookedServiceType.toLowerCase() != selectedServiceType.toLowerCase()) {
+            continue; // Skip bookings for different service types
+          }
+
+          final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+
+          // Only check conflicts with 'pending', 'confirmed', and 'done' bookings
+          // 'cancelled' bookings don't block
+          if (status == 'cancelled') continue;
+
+          final bookedTimeSlot = data['timeSlot'] as String? ?? '';
+          if (bookedTimeSlot.isEmpty) continue;
+
+          final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+
+          // Parse booked time slot (e.g., "14:00" or "14:30")
+          final bookedParts = bookedTimeSlot.split(':');
+          if (bookedParts.length != 2) continue;
+
+          final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
+          final bookedMinute = int.tryParse(bookedParts[1]) ?? 0;
+
+          // Convert to decimal hours for accurate comparison
+          final bookedStartDecimal = bookedHour + (bookedMinute / 60.0);
+          final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+
+          // Convert current time to decimal hours
+          final currentStartDecimal = currentHour + (currentMinute / 60.0);
+          final currentEndDecimal = currentStartDecimal + defaultDuration;
+
+          // Check if our session time overlaps with booked time range
+          if ((currentStartDecimal >= bookedStartDecimal && currentStartDecimal < bookedEndDecimal) ||
+              (currentEndDecimal > bookedStartDecimal && currentEndDecimal <= bookedEndDecimal) ||
+              (currentStartDecimal <= bookedStartDecimal && currentEndDecimal >= bookedEndDecimal)) {
+            // Format booked end time in 12-hour format
+            final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
+            final bookedEndMinute =
+                ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
+            final bookedEndTime24Hour =
+                '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+            final bookedEndTime12Hour = _formatTime12Hour(bookedEndTime24Hour);
+
+            // Format current time and booked time in 12-hour format
+            final currentTime12Hour = _formatTime12Hour(currentTime24Hour);
+            final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
+
+            // Calculate our end time
+            final ourEndHour = (currentStartDecimal + defaultDuration).floor();
+            final ourEndMinute = ((currentStartDecimal + defaultDuration - ourEndHour) * 60).round();
+            final ourEndTime24Hour =
+                '${ourEndHour.toString().padLeft(2, '0')}:${ourEndMinute.toString().padLeft(2, '0')}';
+            final ourEndTime12Hour = _formatTime12Hour(ourEndTime24Hour);
+
+            final errorMessage =
+                '⚠️ Cannot create session: This time slot is already booked for $selectedServiceType.\n\n'
+                'Your session time: $currentTime12Hour - $ourEndTime12Hour (${defaultDuration.toStringAsFixed(1)}h)\n'
+                'Existing booking: $bookedServiceType at $bookedTime12Hour - $bookedEndTime12Hour (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+                'Please wait until the booking ends or choose a different service type.\n'
+                'Note: Different service types (e.g., PS5 and Theatre) can be booked at the same time.';
+
+            if (showError && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(errorMessage, style: const TextStyle(fontSize: 14)),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  action: SnackBarAction(label: 'OK', textColor: Colors.white, onPressed: () {}),
+                ),
+              );
+            }
+
+            throw Exception(errorMessage);
+          }
         }
       }
     } catch (e) {

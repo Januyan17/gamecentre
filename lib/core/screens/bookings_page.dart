@@ -651,11 +651,35 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                     durationHours:
                                                         0.5, // Use 30 minutes (0.5 hours) to check each slot individually
                                                   )
-                                                  : Future.value(999),
+                                                  : Future.value(-1), // -1 means unlimited
                                           builder: (context, slotsSnapshot) {
+                                            // Show loading state while fetching
+                                            if (slotsSnapshot.connectionState == ConnectionState.waiting) {
+                                              return FilterChip(
+                                                selected: false,
+                                                label: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(slot12Hour),
+                                                    if (capacity > 0) ...[
+                                                      const SizedBox(width: 4),
+                                                      const SizedBox(
+                                                        width: 12,
+                                                        height: 12,
+                                                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                                onSelected: null,
+                                                disabledColor: Colors.purple.shade100,
+                                              );
+                                            }
+                                            
                                             final availableSlots = slotsSnapshot.data ?? 0;
                                             // Only mark as fully booked if capacity > 0 AND all slots are booked
                                             // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                                            // availableSlots == -1 means unlimited (capacity == 0)
                                             final isFullyBooked =
                                                 capacity > 0 ? availableSlots == 0 : isBooked;
 
@@ -665,7 +689,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Text(slot12Hour),
-                                                  if (capacity > 0 && slotsSnapshot.hasData) ...[
+                                                  if (capacity > 0 && slotsSnapshot.hasData && availableSlots >= 0) ...[
                                                     const SizedBox(width: 4),
                                                     Container(
                                                       padding: const EdgeInsets.symmetric(

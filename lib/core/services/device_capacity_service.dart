@@ -6,23 +6,68 @@ import 'package:flutter/foundation.dart';
 /// Handles capacity checks, slot counting, and automatic slot assignment
 class DeviceCapacityService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
+  // Cache for device capacity (similar to PriceCalculator)
+  static Map<String, int>? _cachedCapacity;
+  static DateTime? _capacityCacheTime;
+  static const Duration _capacityCacheDuration = Duration(minutes: 5);
+  
+  // Cache for available slots per time slot
+  static Map<String, int>? _cachedAvailableSlots;
+  static DateTime? _slotsCacheTime;
+  static const Duration _slotsCacheDuration = Duration(seconds: 30); // Shorter cache for slots as they change frequently
 
-  /// Get device capacity from settings
+  /// Get device capacity from settings (with caching)
   /// Returns the number of available units for a device type
   static Future<int> getDeviceCapacity(String deviceType) async {
     try {
+      // Check cache first
+      if (_cachedCapacity != null && 
+          _capacityCacheTime != null &&
+          DateTime.now().difference(_capacityCacheTime!) < _capacityCacheDuration) {
+        final capacityField = _getCapacityFieldName(deviceType);
+        return _cachedCapacity![capacityField] ?? 0;
+      }
+      
+      // Fetch from Firestore
       final doc = await _firestore.collection('settings').doc('device_capacity').get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
+        
+        // Update cache
+        _cachedCapacity = {};
+        _cachedCapacity!['ps5Count'] = (data['ps5Count'] ?? 0) as int;
+        _cachedCapacity!['ps4Count'] = (data['ps4Count'] ?? 0) as int;
+        _cachedCapacity!['vrCount'] = (data['vrCount'] ?? 0) as int;
+        _cachedCapacity!['simulatorCount'] = (data['simulatorCount'] ?? 0) as int;
+        _capacityCacheTime = DateTime.now();
+        
         // Map device types to their capacity field names
         final capacityField = _getCapacityFieldName(deviceType);
-        return (data[capacityField] ?? 0) as int;
+        return _cachedCapacity![capacityField] ?? 0;
       }
+      
+      // Update cache with defaults
+      _cachedCapacity = {
+        'ps5Count': 0,
+        'ps4Count': 0,
+        'vrCount': 0,
+        'simulatorCount': 0,
+      };
+      _capacityCacheTime = DateTime.now();
       return 0; // Default to 0 if not configured
     } catch (e) {
       debugPrint('Error getting device capacity: $e');
       return 0;
     }
+  }
+  
+  /// Clear capacity cache (call this when capacity is updated)
+  static void clearCapacityCache() {
+    _cachedCapacity = null;
+    _capacityCacheTime = null;
+    _cachedAvailableSlots = null;
+    _slotsCacheTime = null;
   }
 
   /// Get capacity field name for device type
@@ -93,7 +138,10 @@ class DeviceCapacityService {
         
         // Only count if there's actual overlap (they share time)
         if (hasOverlap) {
-          occupiedCount++;
+          // For PS4/PS5, count the consoleCount (number of consoles booked)
+          // For other services, count as 1
+          final consoleCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
+          occupiedCount += consoleCount;
         }
       }
 
@@ -275,6 +323,8 @@ class DeviceCapacityService {
   }
 
   /// Get available slots count for a given date, time, and device type
+  /// Returns -1 if capacity is 0 (unlimited), otherwise returns available slots count
+  /// Uses caching to avoid repeated queries
   static Future<int> getAvailableSlots({
     required String deviceType,
     required String date,
@@ -282,10 +332,27 @@ class DeviceCapacityService {
     required double durationHours,
   }) async {
     try {
+      // Create cache key
+      final cacheKey = '$deviceType|$date|$timeSlot|$durationHours';
+      
+      // Check cache first (only if cache is recent)
+      if (_cachedAvailableSlots != null &&
+          _slotsCacheTime != null &&
+          DateTime.now().difference(_slotsCacheTime!) < _slotsCacheDuration) {
+        if (_cachedAvailableSlots!.containsKey(cacheKey)) {
+          return _cachedAvailableSlots![cacheKey]!;
+        }
+      } else {
+        // Clear old cache if expired
+        _cachedAvailableSlots = {};
+        _slotsCacheTime = DateTime.now();
+      }
+      
       final capacity = await getDeviceCapacity(deviceType);
       if (capacity == 0) {
-        // If capacity is 0, return a large number (unlimited)
-        return 999;
+        // If capacity is 0, return -1 to indicate unlimited (not 999 to avoid confusion)
+        _cachedAvailableSlots![cacheKey] = -1;
+        return -1;
       }
 
       final occupiedSlots = await countOccupiedSlots(
@@ -295,7 +362,12 @@ class DeviceCapacityService {
         durationHours: durationHours,
       );
 
-      return (capacity - occupiedSlots).clamp(0, capacity);
+      final availableSlots = (capacity - occupiedSlots).clamp(0, capacity);
+      
+      // Cache the result
+      _cachedAvailableSlots![cacheKey] = availableSlots;
+      
+      return availableSlots;
     } catch (e) {
       debugPrint('Error getting available slots: $e');
       return 0;
