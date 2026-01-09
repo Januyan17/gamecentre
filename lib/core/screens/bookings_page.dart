@@ -383,6 +383,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       '22:00',
       '22:30',
       '23:00',
+      '23:30',
+      '24:00',
     ];
 
     // Convert to 12-hour format for display
@@ -503,6 +505,86 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                         } catch (e) {
                           debugPrint('Error parsing session start time: $e');
                         }
+                      }
+                    }
+
+                    // Also check closed sessions for today's date
+                    // IMPORTANT: For closed sessions, use actual endTime if available
+                    // This ensures slots are freed up when sessions end early (Bug 1 fix)
+                    if (dateId == todayId) {
+                      try {
+                        final closedSessionsSnapshot = await _firestore
+                            .collection('days')
+                            .doc(dateId)
+                            .collection('sessions')
+                            .where('status', isEqualTo: 'closed')
+                            .get();
+
+                        for (var sessionDoc in closedSessionsSnapshot.docs) {
+                          final sessionData = sessionDoc.data();
+                          final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+                          
+                          // Get actual session end time if available
+                          final sessionEndTime = sessionData['endTime'] as Timestamp?;
+                          DateTime? actualEndTime;
+                          if (sessionEndTime != null) {
+                            actualEndTime = sessionEndTime.toDate();
+                          }
+
+                          for (var service in services) {
+                            final serviceTypeFromSession = service['type'] as String? ?? '';
+                            if (serviceTypeFromSession != serviceType) continue;
+
+                            final startTimeStr = service['startTime'] as String? ?? '';
+                            if (startTimeStr.isEmpty) continue;
+
+                            try {
+                              final startTime = DateTime.parse(startTimeStr);
+                              final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                              if (serviceDateId != dateId) continue;
+
+                              // Use actual end time if session ended early, otherwise use scheduled duration
+                              double serviceEndDecimal;
+                              if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                                // Session ended early - use actual end time
+                                serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                                // If end time is on a different day, use the scheduled end time instead
+                                final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
+                                if (endDateId != dateId) {
+                                  // End time is on different date, use scheduled duration
+                                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                                  final serviceDurationHours = hours + (minutes / 60.0);
+                                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                                  serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                                }
+                              } else {
+                                // Use scheduled duration (session completed full duration or no end time recorded)
+                                final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                                final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                                final serviceDurationHours = hours + (minutes / 60.0);
+                                final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                                serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                              }
+
+                              final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+
+                              // Mark all affected time slots (only up to actual end time if session ended early)
+                              for (double hour = serviceStartDecimal; hour < serviceEndDecimal; hour += 0.5) {
+                                final slotHour = hour.floor();
+                                final slotMinute = ((hour - slotHour) * 60).round();
+                                final slotStr =
+                                    '${slotHour.toString().padLeft(2, '0')}:${slotMinute.toString().padLeft(2, '0')}';
+                                newBookedSlots.add(slotStr);
+                              }
+                            } catch (e) {
+                              debugPrint('Error parsing closed session time: $e');
+                              continue;
+                            }
+                          }
+                        }
+                      } catch (e) {
+                        debugPrint('Error checking closed sessions: $e');
                       }
                     }
                   }
@@ -1268,12 +1350,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 // Check if selected date is today
                                 final now = DateTime.now();
                                 final today = DateTime(now.year, now.month, now.day);
-                                final selectedDateOnly = DateTime(dialogSelectedDate.year, dialogSelectedDate.month, dialogSelectedDate.day);
+                                final selectedDateOnly = DateTime(
+                                  dialogSelectedDate.year,
+                                  dialogSelectedDate.month,
+                                  dialogSelectedDate.day,
+                                );
                                 final isToday = selectedDateOnly.isAtSameMomentAs(today);
-                                
+
                                 // Set initial time to current time if today, otherwise allow any time
-                                final initialTime = _customTime ?? (isToday ? TimeOfDay.now() : const TimeOfDay(hour: 9, minute: 0));
-                                
+                                final initialTime =
+                                    _customTime ??
+                                    (isToday
+                                        ? TimeOfDay.now()
+                                        : const TimeOfDay(hour: 9, minute: 0));
+
                                 final picked = await showTimePicker(
                                   context: context,
                                   initialTime: initialTime,
@@ -1286,7 +1376,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     );
                                   },
                                 );
-                                
+
                                 if (picked != null) {
                                   // If today, validate that selected time is not in the past
                                   if (isToday) {
@@ -1297,11 +1387,15 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       picked.hour,
                                       picked.minute,
                                     );
-                                    if (selectedDateTime.isBefore(now.subtract(const Duration(minutes: 1)))) {
+                                    if (selectedDateTime.isBefore(
+                                      now.subtract(const Duration(minutes: 1)),
+                                    )) {
                                       if (mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Cannot select a time that has already passed'),
+                                            content: Text(
+                                              'Cannot select a time that has already passed',
+                                            ),
                                             backgroundColor: Colors.red,
                                             duration: Duration(seconds: 2),
                                           ),
@@ -1310,7 +1404,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       return;
                                     }
                                   }
-                                  
+
                                   setDialogState(() {
                                     _customTime = picked;
                                   });
@@ -1359,13 +1453,17 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   _timeSlots.map((slot) {
                                     final isBooked = dialogBookedSlots.contains(slot);
                                     final isSelected = _selectedTimeSlot == slot;
-                                    
+
                                     // Check if time slot has passed (only for today's date)
                                     final now = DateTime.now();
                                     final today = DateTime(now.year, now.month, now.day);
-                                    final selectedDateOnly = DateTime(dialogSelectedDate.year, dialogSelectedDate.month, dialogSelectedDate.day);
+                                    final selectedDateOnly = DateTime(
+                                      dialogSelectedDate.year,
+                                      dialogSelectedDate.month,
+                                      dialogSelectedDate.day,
+                                    );
                                     final isToday = selectedDateOnly.isAtSameMomentAs(today);
-                                    
+
                                     bool isPastTime = false;
                                     if (isToday) {
                                       // Convert 12-hour format to 24-hour format for comparison
@@ -1374,14 +1472,22 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                       if (slotParts.length == 2) {
                                         final slotHour = int.tryParse(slotParts[0]) ?? 0;
                                         final slotMinute = int.tryParse(slotParts[1]) ?? 0;
-                                        final slotDateTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
+                                        final slotDateTime = DateTime(
+                                          now.year,
+                                          now.month,
+                                          now.day,
+                                          slotHour,
+                                          slotMinute,
+                                        );
                                         // Disable if slot time has passed (with 1 minute buffer for safety)
-                                        isPastTime = slotDateTime.isBefore(now.subtract(const Duration(minutes: 1)));
+                                        isPastTime = slotDateTime.isBefore(
+                                          now.subtract(const Duration(minutes: 1)),
+                                        );
                                       }
                                     }
-                                    
+
                                     final isDisabled = isBooked || isPastTime;
-                                    
+
                                     return GestureDetector(
                                       onTap:
                                           isDisabled
@@ -1451,7 +1557,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                         : isSelected
                                                         ? Colors.white
                                                         : Colors.green.shade900,
-                                                decoration: isPastTime ? TextDecoration.lineThrough : null,
+                                                decoration:
+                                                    isPastTime ? TextDecoration.lineThrough : null,
                                               ),
                                             ),
                                           ],

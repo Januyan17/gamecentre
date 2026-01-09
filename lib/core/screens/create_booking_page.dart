@@ -677,6 +677,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         '22:00',
         '22:30',
         '23:00',
+        '23:30',
       ];
 
       const slotCheckDurationHours = 0.5; // 30 minutes per slot
@@ -2131,6 +2132,9 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       '22:00',
       '22:30',
       '23:00',
+      '23:30',
+      '24:00',
+      '24:30',
     ];
 
     // Convert to 12-hour format for display
@@ -2176,9 +2180,13 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       // Check if time slot has passed (only for today's date)
                       final now = DateTime.now();
                       final today = DateTime(now.year, now.month, now.day);
-                      final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+                      final selectedDateOnly = DateTime(
+                        _selectedDate.year,
+                        _selectedDate.month,
+                        _selectedDate.day,
+                      );
                       final isToday = selectedDateOnly.isAtSameMomentAs(today);
-                      
+
                       bool isPastTime = false;
                       if (isToday) {
                         // Parse the time slot
@@ -2186,9 +2194,17 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                         if (slotParts.length == 2) {
                           final slotHour = int.tryParse(slotParts[0]) ?? 0;
                           final slotMinute = int.tryParse(slotParts[1]) ?? 0;
-                          final slotDateTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
+                          final slotDateTime = DateTime(
+                            now.year,
+                            now.month,
+                            now.day,
+                            slotHour,
+                            slotMinute,
+                          );
                           // Disable if slot time has passed (with 1 minute buffer for safety)
-                          isPastTime = slotDateTime.isBefore(now.subtract(const Duration(minutes: 1)));
+                          isPastTime = slotDateTime.isBefore(
+                            now.subtract(const Duration(minutes: 1)),
+                          );
                         }
                       }
 
@@ -2267,15 +2283,16 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                               (isFullyBooked || isPastTime)
                                   ? Colors.grey.shade600
                                   : (isSelected ? Colors.white : Colors.black),
-                          decoration: (isFullyBooked || isPastTime) ? TextDecoration.lineThrough : null,
+                          decoration:
+                              (isFullyBooked || isPastTime) ? TextDecoration.lineThrough : null,
                         ),
                         avatar:
                             (isFullyBooked || isPastTime)
                                 ? Icon(
-                                    isPastTime ? Icons.access_time : Icons.block,
-                                    size: 16,
-                                    color: isPastTime ? Colors.grey.shade600 : Colors.red.shade700,
-                                  )
+                                  isPastTime ? Icons.access_time : Icons.block,
+                                  size: 16,
+                                  color: isPastTime ? Colors.grey.shade600 : Colors.red.shade700,
+                                )
                                 : null,
                         tooltip:
                             isPastTime
@@ -2393,17 +2410,19 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
               // Check if selected date is today
               final now = DateTime.now();
               final today = DateTime(now.year, now.month, now.day);
-              final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-              final isToday = selectedDateOnly.isAtSameMomentAs(today);
-              
-              // Set initial time to current time if today, otherwise allow any time
-              final initialTime = _customTime ?? (isToday ? TimeOfDay.now() : const TimeOfDay(hour: 9, minute: 0));
-              
-              final time = await showTimePicker(
-                context: context,
-                initialTime: initialTime,
+              final selectedDateOnly = DateTime(
+                _selectedDate.year,
+                _selectedDate.month,
+                _selectedDate.day,
               );
-              
+              final isToday = selectedDateOnly.isAtSameMomentAs(today);
+
+              // Set initial time to current time if today, otherwise allow any time
+              final initialTime =
+                  _customTime ?? (isToday ? TimeOfDay.now() : const TimeOfDay(hour: 9, minute: 0));
+
+              final time = await showTimePicker(context: context, initialTime: initialTime);
+
               if (time != null) {
                 // If today, validate that selected time is not in the past
                 if (isToday) {
@@ -2427,7 +2446,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     return;
                   }
                 }
-                
+
                 setState(() {
                   _customTime = time;
                 });
