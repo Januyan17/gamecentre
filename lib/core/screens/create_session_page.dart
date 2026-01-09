@@ -346,23 +346,20 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
       final capacity = await DeviceCapacityService.getDeviceCapacity(selectedServiceType);
       
       if (capacity > 0) {
-        // Use capacity-based checking: check if all slots are booked
-        final canBook = await DeviceCapacityService.canMakeBooking(
+        // Use capacity-based checking: check if there are available slots
+        // For manual sessions, we only need 1 slot (the service will be added later)
+        // So we check if at least 1 slot is available
+        final availableSlots = await DeviceCapacityService.getAvailableSlots(
           deviceType: selectedServiceType,
           date: dateId,
           timeSlot: currentTime24Hour,
           durationHours: defaultDuration,
         );
 
-        if (!canBook) {
-          // All slots are booked
-          final availableSlots = await DeviceCapacityService.getAvailableSlots(
-            deviceType: selectedServiceType,
-            date: dateId,
-            timeSlot: currentTime24Hour,
-            durationHours: defaultDuration,
-          );
-
+        // Allow session creation if there's at least 1 slot available
+        // The actual conflict check with correct duration will happen when service is added
+        if (availableSlots <= 0 && availableSlots != -1) {
+          // No slots available (capacity is limited and all are booked)
           final currentTime12Hour = _formatTime12Hour(currentTime24Hour);
           final ourEndHour = (currentHour + defaultDuration).floor();
           final ourEndMinute = ((currentHour + (currentMinute / 60.0) + defaultDuration - ourEndHour) * 60).round();
@@ -373,7 +370,7 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
           final errorMessage =
               '⚠️ Cannot create session: All $capacity $selectedServiceType slots are fully booked at this time.\n\n'
               'Your session time: $currentTime12Hour - $ourEndTime12Hour (${defaultDuration.toStringAsFixed(1)}h)\n'
-              'Available slots: $availableSlots of $capacity\n\n'
+              'Available slots: 0 of $capacity\n\n'
               'Please wait until a slot becomes available or choose a different service type.\n'
               'Note: Different service types (e.g., PS5 and Theatre) can be booked at the same time.';
 
@@ -391,6 +388,9 @@ class _CreateSessionPageState extends State<CreateSessionPage> {
 
           throw Exception(errorMessage);
         }
+        // If availableSlots > 0 or -1 (unlimited), allow session creation
+        // The actual conflict check with the correct service duration will happen
+        // when the service is added via SessionProvider.addService()
       } else {
         // Capacity is 0 (unlimited) - use old overlap-based checking for backward compatibility
         final bookingsSnapshot =

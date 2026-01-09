@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rowzow/core/services/session_service.dart';
 import 'package:rowzow/core/services/notification_service.dart';
+import 'package:rowzow/core/services/device_capacity_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
@@ -145,71 +146,106 @@ class SessionProvider extends ChangeNotifier {
         return; // No duration, no conflict
       }
 
-      // Get existing bookings for this date and service type
-      final bookingsSnapshot = await FirebaseFirestore.instance
-          .collection('bookings')
-          .where('date', isEqualTo: dateId)
-          .where('serviceType', isEqualTo: serviceType)
-          .get();
+      // Check device capacity first
+      final capacity = await DeviceCapacityService.getDeviceCapacity(serviceType);
+      
+      if (capacity > 0) {
+        // Use capacity-based checking: check if there are available slots
+        final serviceTime24Hour = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+        final availableSlots = await DeviceCapacityService.getAvailableSlots(
+          deviceType: serviceType,
+          date: dateId,
+          timeSlot: serviceTime24Hour,
+          durationHours: serviceDurationHours,
+        );
 
-      // Check for conflicts
-      final serviceStartHour = startTime.hour;
-      final serviceStartMinute = startTime.minute;
-      final serviceStartDecimal = serviceStartHour + (serviceStartMinute / 60.0);
-      final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
-
-      for (var doc in bookingsSnapshot.docs) {
-        final data = doc.data();
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-        
-        // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
-        // Only 'cancelled' bookings don't block (time slots are available)
-        // Once a booking is made, it blocks the slot regardless of pending/done status
-        if (status == 'cancelled') {
-          continue; // Skip - don't check for conflicts, allow the service
-        }
-        // 'pending', 'confirmed', and 'done' bookings will cause conflicts
-
-        final bookedTimeSlot = data['timeSlot'] as String? ?? '';
-        if (bookedTimeSlot.isEmpty) continue;
-
-        final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-        
-        // Parse booked time slot (e.g., "14:00")
-        final bookedParts = bookedTimeSlot.split(':');
-        if (bookedParts.length != 2) continue;
-        
-        final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
-        final bookedStartDecimal = bookedHour.toDouble();
-        final bookedEndDecimal = bookedStartDecimal + bookedDuration;
-
-        // Check if service overlaps with booking
-        if ((serviceStartDecimal >= bookedStartDecimal && serviceStartDecimal < bookedEndDecimal) ||
-            (serviceEndDecimal > bookedStartDecimal && serviceEndDecimal <= bookedEndDecimal) ||
-            (serviceStartDecimal <= bookedStartDecimal && serviceEndDecimal >= bookedEndDecimal)) {
-          // Format booked end time in 12-hour format
-          final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
-          final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
-          final bookedEndTime24Hour = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
-          final bookedEndTime = _formatTime12Hour(bookedEndTime24Hour);
-          
-          // Format service time in 12-hour format
+        // Allow service addition if there's at least 1 slot available
+        if (availableSlots <= 0 && availableSlots != -1) {
+          // No slots available
           final serviceTimeStr = DateFormat('hh:mm a').format(startTime);
-          
-          // Format booked time slot in 12-hour format
-          final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
+          final serviceEndTime = startTime.add(Duration(
+            hours: serviceDurationHours.floor(),
+            minutes: ((serviceDurationHours - serviceDurationHours.floor()) * 60).round(),
+          ));
+          final serviceEndTimeStr = DateFormat('hh:mm a').format(serviceEndTime);
           
           throw Exception(
-            'This time slot conflicts with an existing booking.\n\n'
-            'Your service time: $serviceTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
-            'Existing booking: $bookedTime12Hour - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
-            'Please choose a different time to avoid conflicts.'
+            'Cannot add service: All $capacity $serviceType slots are fully booked at this time.\n\n'
+            'Your service time: $serviceTimeStr - $serviceEndTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
+            'Available slots: 0 of $capacity\n\n'
+            'Please wait until a slot becomes available or choose a different time.'
           );
+        }
+        // If availableSlots > 0 or -1 (unlimited), allow service addition
+      } else {
+        // Capacity is 0 (unlimited) - use old overlap-based checking for backward compatibility
+        // Get existing bookings for this date and service type
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('date', isEqualTo: dateId)
+            .where('serviceType', isEqualTo: serviceType)
+            .get();
+
+        // Check for conflicts
+        final serviceStartHour = startTime.hour;
+        final serviceStartMinute = startTime.minute;
+        final serviceStartDecimal = serviceStartHour + (serviceStartMinute / 60.0);
+        final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+
+        for (var doc in bookingsSnapshot.docs) {
+          final data = doc.data();
+          final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+          
+          // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
+          // Only 'cancelled' bookings don't block (time slots are available)
+          // Once a booking is made, it blocks the slot regardless of pending/done status
+          if (status == 'cancelled') {
+            continue; // Skip - don't check for conflicts, allow the service
+          }
+          // 'pending', 'confirmed', and 'done' bookings will cause conflicts
+
+          final bookedTimeSlot = data['timeSlot'] as String? ?? '';
+          if (bookedTimeSlot.isEmpty) continue;
+
+          final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+          
+          // Parse booked time slot (e.g., "14:00")
+          final bookedParts = bookedTimeSlot.split(':');
+          if (bookedParts.length != 2) continue;
+          
+          final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
+          final bookedStartDecimal = bookedHour.toDouble();
+          final bookedEndDecimal = bookedStartDecimal + bookedDuration;
+
+          // Check if service overlaps with booking
+          if ((serviceStartDecimal >= bookedStartDecimal && serviceStartDecimal < bookedEndDecimal) ||
+              (serviceEndDecimal > bookedStartDecimal && serviceEndDecimal <= bookedEndDecimal) ||
+              (serviceStartDecimal <= bookedStartDecimal && serviceEndDecimal >= bookedEndDecimal)) {
+            // Format booked end time in 12-hour format
+            final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
+            final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
+            final bookedEndTime24Hour = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+            final bookedEndTime = _formatTime12Hour(bookedEndTime24Hour);
+            
+            // Format service time in 12-hour format
+            final serviceTimeStr = DateFormat('hh:mm a').format(startTime);
+            
+            // Format booked time slot in 12-hour format
+            final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
+            
+            throw Exception(
+              'This time slot conflicts with an existing booking.\n\n'
+              'Your service time: $serviceTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
+              'Existing booking: $bookedTime12Hour - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
+              'Please choose a different time to avoid conflicts.'
+            );
+          }
         }
       }
     } catch (e) {
       // If it's already our custom exception, re-throw it
-      if (e.toString().contains('conflicts with an existing booking')) {
+      if (e.toString().contains('conflicts with an existing booking') ||
+          e.toString().contains('Cannot add service')) {
         rethrow;
       }
       // Otherwise, log and continue (don't block service addition for other errors)
