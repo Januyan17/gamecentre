@@ -80,16 +80,19 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _isExporting ? null : _exportUserData,
-              icon: _isExporting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Icon(Icons.file_download),
+              icon:
+                  _isExporting
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                      : const Icon(Icons.file_download),
               label: Text(_isExporting ? 'Exporting...' : 'Export to Excel'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade700,
@@ -105,14 +108,16 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _statusMessage.contains('Error')
-                      ? Colors.red.shade50
-                      : Colors.green.shade50,
+                  color:
+                      _statusMessage.contains('Error')
+                          ? Colors.red.shade50
+                          : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: _statusMessage.contains('Error')
-                        ? Colors.red.shade300
-                        : Colors.green.shade300,
+                    color:
+                        _statusMessage.contains('Error')
+                            ? Colors.red.shade300
+                            : Colors.green.shade300,
                   ),
                 ),
                 child: Row(
@@ -121,18 +126,20 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
                       _statusMessage.contains('Error')
                           ? Icons.error_outline
                           : Icons.check_circle_outline,
-                      color: _statusMessage.contains('Error')
-                          ? Colors.red.shade700
-                          : Colors.green.shade700,
+                      color:
+                          _statusMessage.contains('Error')
+                              ? Colors.red.shade700
+                              : Colors.green.shade700,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _statusMessage,
                         style: TextStyle(
-                          color: _statusMessage.contains('Error')
-                              ? Colors.red.shade900
-                              : Colors.green.shade900,
+                          color:
+                              _statusMessage.contains('Error')
+                                  ? Colors.red.shade900
+                                  : Colors.green.shade900,
                         ),
                       ),
                     ),
@@ -191,22 +198,82 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
         fontColorHex: ExcelColor.white,
       );
       for (int i = 0; i < 8; i++) {
-        sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
+        sheet
+            .cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
             .cellStyle = headerStyle;
       }
 
       final Set<String> uniqueUsers = {}; // Track unique phone numbers
+      final Set<String> exportedManuallyAddedUsers = {}; // Track manually added users already exported
+
+      // First, fetch manually added users from the 'users' collection
+      setState(() {
+        _statusMessage = 'Fetching manually added users...';
+      });
+      
+      try {
+        final manuallyAddedUsersSnapshot =
+            await _firestore
+                .collection('users')
+                .where('createdManually', isEqualTo: true)
+                .get();
+
+        for (var userDoc in manuallyAddedUsersSnapshot.docs) {
+          final userData = userDoc.data();
+          final customerName =
+              userData['customerName'] as String? ?? 'Unknown';
+          final phoneNumber = userData['phoneNumber'] as String? ?? '';
+          final createdAt = userData['createdAt'] as Timestamp?;
+
+          if (phoneNumber.isNotEmpty && phoneNumber != 'NA') {
+            uniqueUsers.add(phoneNumber);
+            exportedManuallyAddedUsers.add(phoneNumber);
+
+            // Format date and time from createdAt if available, otherwise use N/A
+            String dateStr = 'N/A';
+            String timeStr = 'N/A';
+            if (createdAt != null) {
+              final dateTime = createdAt.toDate();
+              dateStr = DateFormat('yyyy-MM-dd').format(dateTime);
+              timeStr = DateFormat('HH:mm').format(dateTime);
+            }
+
+            // Add manually added user to export
+            sheet.appendRow([
+              TextCellValue(customerName),
+              TextCellValue(phoneNumber),
+              TextCellValue(dateStr),
+              TextCellValue(timeStr),
+              TextCellValue('Manually Added'),
+              TextCellValue('N/A'),
+              TextCellValue('0.00'),
+              TextCellValue('Manual Entry'),
+            ]);
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching manually added users: $e');
+        // Continue with other data sources
+      }
 
       // Fetch active sessions
+      setState(() {
+        _statusMessage = 'Fetching active sessions...';
+      });
+      
       final activeSessionsSnapshot =
           await _firestore.collection('active_sessions').get();
 
       for (var sessionDoc in activeSessionsSnapshot.docs) {
-        final sessionData = sessionDoc.data();
-        final customerName = sessionData['customerName'] as String? ?? 'Unknown';
+        final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+        if (sessionData == null) continue;
+        
+        final customerName =
+            sessionData['customerName'] as String? ?? 'Unknown';
         final phoneNumber = sessionData['phoneNumber'] as String? ?? '';
         final startTime = sessionData['startTime'] as Timestamp?;
-        final totalAmount = (sessionData['totalAmount'] as num?)?.toDouble() ?? 0.0;
+        final totalAmount =
+            (sessionData['totalAmount'] as num?)?.toDouble() ?? 0.0;
         final services = List<Map<String, dynamic>>.from(
           sessionData['services'] ?? [],
         );
@@ -238,7 +305,8 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
               final serviceType = service['type'] as String? ?? 'N/A';
               final hours = (service['hours'] as num?)?.toInt() ?? 0;
               final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-              final servicePrice = (service['price'] as num?)?.toDouble() ?? 0.0;
+              final servicePrice =
+                  (service['price'] as num?)?.toDouble() ?? 0.0;
               String duration = '';
               if (hours > 0 && minutes > 0) {
                 duration = '${hours}h ${minutes}m';
@@ -265,110 +333,155 @@ class _UserDataExportPageState extends State<UserDataExportPage> {
         }
       }
 
-      // Fetch history sessions (closed sessions)
+      // Fetch history sessions (closed sessions) - optimized with parallel queries
+      setState(() {
+        _statusMessage = 'Fetching history sessions...';
+      });
+
       final now = DateTime.now();
-      // Get sessions from last 365 days
-      for (int i = 0; i < 365; i++) {
-        final date = now.subtract(Duration(days: i));
-        final dateId = DateFormat('yyyy-MM-dd').format(date);
+      const int totalDays = 365;
+      const int batchSize = 20; // Fetch 20 days in parallel at a time
+      
+      // Process days in batches for better performance
+      for (int batchStart = 0; batchStart < totalDays; batchStart += batchSize) {
+        final batchEnd = (batchStart + batchSize < totalDays) 
+            ? batchStart + batchSize 
+            : totalDays;
+        
+        // Update progress
+        setState(() {
+          _statusMessage = 'Fetching history sessions... ($batchEnd/$totalDays days)';
+        });
 
+        // Create list of futures for parallel queries
+        final List<Future<QuerySnapshot>> batchQueries = [];
+        final List<String> batchDateIds = [];
+
+        for (int i = batchStart; i < batchEnd; i++) {
+          final date = now.subtract(Duration(days: i));
+          final dateId = DateFormat('yyyy-MM-dd').format(date);
+          batchDateIds.add(dateId);
+          
+          batchQueries.add(
+            _firestore
+                .collection('days')
+                .doc(dateId)
+                .collection('sessions')
+                .get(),
+          );
+        }
+
+        // Execute all queries in parallel
         try {
-          final historySessionsSnapshot = await _firestore
-              .collection('days')
-              .doc(dateId)
-              .collection('sessions')
-              .get();
+          final List<QuerySnapshot> batchResults = await Future.wait(batchQueries);
 
-          for (var sessionDoc in historySessionsSnapshot.docs) {
-            final sessionData = sessionDoc.data();
-            final customerName = sessionData['customerName'] as String? ?? 'Unknown';
-            final phoneNumber = sessionData['phoneNumber'] as String? ?? '';
-            final startTime = sessionData['startTime'] as Timestamp?;
-            final totalAmount = (sessionData['totalAmount'] as num?)?.toDouble() ?? 0.0;
-            final services = List<Map<String, dynamic>>.from(
-              sessionData['services'] ?? [],
-            );
+          // Process results
+          for (int i = 0; i < batchResults.length; i++) {
+            final historySessionsSnapshot = batchResults[i];
 
-            if (phoneNumber.isNotEmpty && phoneNumber != 'NA') {
-              uniqueUsers.add(phoneNumber);
-            }
+            for (var sessionDoc in historySessionsSnapshot.docs) {
+              final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+              if (sessionData == null) continue;
+              
+              final customerName =
+                  sessionData['customerName'] as String? ?? 'Unknown';
+              final phoneNumber = sessionData['phoneNumber'] as String? ?? '';
+              final startTime = sessionData['startTime'] as Timestamp?;
+              final totalAmount =
+                  (sessionData['totalAmount'] as num?)?.toDouble() ?? 0.0;
+              final services = List<Map<String, dynamic>>.from(
+                sessionData['services'] ?? [],
+              );
 
-            if (startTime != null) {
-              final dateTime = startTime.toDate();
-              final dateStr = DateFormat('yyyy-MM-dd').format(dateTime);
-              final timeStr = DateFormat('HH:mm').format(dateTime);
+              if (phoneNumber.isNotEmpty && phoneNumber != 'NA') {
+                uniqueUsers.add(phoneNumber);
+              }
 
-              if (services.isEmpty) {
-                // Session without services
-                sheet.appendRow([
-                  TextCellValue(customerName),
-                  TextCellValue(phoneNumber.isEmpty ? 'N/A' : phoneNumber),
-                  TextCellValue(dateStr),
-                  TextCellValue(timeStr),
-                  TextCellValue('N/A'),
-                  TextCellValue('N/A'),
-                  TextCellValue(totalAmount.toStringAsFixed(2)),
-                  TextCellValue('Closed'),
-                ]);
-              } else {
-                // Add each service as a separate row
-                for (var service in services) {
-                  final serviceType = service['type'] as String? ?? 'N/A';
-                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
-                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-                  final servicePrice = (service['price'] as num?)?.toDouble() ?? 0.0;
-                  String duration = '';
-                  if (hours > 0 && minutes > 0) {
-                    duration = '${hours}h ${minutes}m';
-                  } else if (hours > 0) {
-                    duration = '${hours}h';
-                  } else if (minutes > 0) {
-                    duration = '${minutes}m';
-                  } else {
-                    duration = 'N/A';
-                  }
+              if (startTime != null) {
+                final dateTime = startTime.toDate();
+                final dateStr = DateFormat('yyyy-MM-dd').format(dateTime);
+                final timeStr = DateFormat('HH:mm').format(dateTime);
 
+                if (services.isEmpty) {
+                  // Session without services
                   sheet.appendRow([
                     TextCellValue(customerName),
                     TextCellValue(phoneNumber.isEmpty ? 'N/A' : phoneNumber),
                     TextCellValue(dateStr),
                     TextCellValue(timeStr),
-                    TextCellValue(serviceType),
-                    TextCellValue(duration),
-                    TextCellValue(servicePrice.toStringAsFixed(2)),
+                    TextCellValue('N/A'),
+                    TextCellValue('N/A'),
+                    TextCellValue(totalAmount.toStringAsFixed(2)),
                     TextCellValue('Closed'),
                   ]);
+                } else {
+                  // Add each service as a separate row
+                  for (var service in services) {
+                    final serviceType = service['type'] as String? ?? 'N/A';
+                    final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                    final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                    final servicePrice =
+                        (service['price'] as num?)?.toDouble() ?? 0.0;
+                    String duration = '';
+                    if (hours > 0 && minutes > 0) {
+                      duration = '${hours}h ${minutes}m';
+                    } else if (hours > 0) {
+                      duration = '${hours}h';
+                    } else if (minutes > 0) {
+                      duration = '${minutes}m';
+                    } else {
+                      duration = 'N/A';
+                    }
+
+                    sheet.appendRow([
+                      TextCellValue(customerName),
+                      TextCellValue(phoneNumber.isEmpty ? 'N/A' : phoneNumber),
+                      TextCellValue(dateStr),
+                      TextCellValue(timeStr),
+                      TextCellValue(serviceType),
+                      TextCellValue(duration),
+                      TextCellValue(servicePrice.toStringAsFixed(2)),
+                      TextCellValue('Closed'),
+                    ]);
+                  }
                 }
               }
             }
           }
         } catch (e) {
-          debugPrint('Error fetching history for $dateId: $e');
-          // Continue with next date
+          debugPrint('Error fetching history batch: $e');
+          // Continue with next batch
         }
       }
 
       // Update total users count
       setState(() {
         _totalUsers = uniqueUsers.length;
+        _statusMessage = 'Generating Excel file...';
       });
 
       // Save Excel file
-      final fileName = 'user_data_export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+      final fileName =
+          'user_data_export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
       final bytes = excel.save();
 
       if (bytes == null) {
         throw Exception('Failed to generate Excel file');
       }
 
-      // Get temporary directory
+      // Get temporary directory and save file
+      setState(() {
+        _statusMessage = 'Saving file...';
+      });
+      
       final directory = await getTemporaryDirectory();
       final filePath = '${directory.path}/$fileName';
       final file = File(filePath);
       await file.writeAsBytes(bytes);
 
       setState(() {
-        _statusMessage = 'Export completed! Found $_totalUsers unique users. File saved.';
+        _statusMessage =
+            'Export completed! Found $_totalUsers unique users. File saved.';
       });
 
       // Share the file

@@ -6,6 +6,7 @@ import 'bookings_page.dart';
 import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
 import 'user_data_export_page.dart';
+import 'add_user_page.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -158,6 +159,27 @@ class SettingsPlaceholder extends StatelessWidget {
               label: const Text('Export User Data'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AddUserPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.person_add),
+              label: const Text('Add User Manually'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade700,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,

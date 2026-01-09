@@ -33,7 +33,29 @@ class SessionService {
 
       final List<Map<String, dynamic>> foundSessions = [];
 
-      // First, check active sessions (most recent and fastest)
+      // First, check manually added users (fastest check)
+      try {
+        final usersSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phoneNumber', isEqualTo: cleanPhone)
+            .limit(1)
+            .get();
+
+        if (usersSnapshot.docs.isNotEmpty) {
+          final userData = usersSnapshot.docs.first.data();
+          // Return user data in the same format as session data
+          return {
+            'customerName': userData['customerName'] ?? 'Unknown',
+            'phoneNumber': cleanPhone,
+            'createdManually': true,
+          };
+        }
+      } catch (e) {
+        // If query fails, continue to other searches
+        print('Error searching users collection: $e');
+      }
+
+      // Then check active sessions (most recent and fastest)
       try {
         // Try direct query first
         final activeSnapshot = await _fs.activeSessionsRef()
