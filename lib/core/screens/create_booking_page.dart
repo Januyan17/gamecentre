@@ -2173,6 +2173,25 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                       // Check booked slots using 24-hour format
                       final isBooked = _bookedTimeSlots.contains(slot24Hour);
 
+                      // Check if time slot has passed (only for today's date)
+                      final now = DateTime.now();
+                      final today = DateTime(now.year, now.month, now.day);
+                      final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+                      final isToday = selectedDateOnly.isAtSameMomentAs(today);
+                      
+                      bool isPastTime = false;
+                      if (isToday) {
+                        // Parse the time slot
+                        final slotParts = slot24Hour.split(':');
+                        if (slotParts.length == 2) {
+                          final slotHour = int.tryParse(slotParts[0]) ?? 0;
+                          final slotMinute = int.tryParse(slotParts[1]) ?? 0;
+                          final slotDateTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
+                          // Disable if slot time has passed (with 1 minute buffer for safety)
+                          isPastTime = slotDateTime.isBefore(now.subtract(const Duration(minutes: 1)));
+                        }
+                      }
+
                       // Use cached value if available, otherwise show loading only on initial load
                       final cachedSlots = _availableSlotsCache[slot24Hour];
                       final availableSlots =
@@ -2186,10 +2205,11 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
 
                       // Only disable if capacity > 0 AND all slots are booked (availableSlots == 0)
                       // OR if capacity == 0 AND time slot is marked as booked (old behavior)
+                      // OR if time slot has passed (for today's date)
                       // availableSlots == -1 means unlimited (capacity == 0)
                       // availableSlots == -2 means not loaded yet (show as available to avoid blocking)
                       final isFullyBooked = _deviceCapacity > 0 ? (availableSlots == 0) : isBooked;
-                      final canSelect = !isFullyBooked;
+                      final canSelect = !isFullyBooked && !isPastTime;
 
                       return FilterChip(
                         selected: isSelected,
@@ -2244,17 +2264,23 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                         selectedColor: Colors.green.shade300,
                         labelStyle: TextStyle(
                           color:
-                              isFullyBooked
-                                  ? Colors.red.shade700
+                              (isFullyBooked || isPastTime)
+                                  ? Colors.grey.shade600
                                   : (isSelected ? Colors.white : Colors.black),
-                          decoration: isFullyBooked ? TextDecoration.lineThrough : null,
+                          decoration: (isFullyBooked || isPastTime) ? TextDecoration.lineThrough : null,
                         ),
                         avatar:
-                            isFullyBooked
-                                ? Icon(Icons.block, size: 16, color: Colors.red.shade700)
+                            (isFullyBooked || isPastTime)
+                                ? Icon(
+                                    isPastTime ? Icons.access_time : Icons.block,
+                                    size: 16,
+                                    color: isPastTime ? Colors.grey.shade600 : Colors.red.shade700,
+                                  )
                                 : null,
                         tooltip:
-                            isFullyBooked
+                            isPastTime
+                                ? 'This time slot has already passed'
+                                : isFullyBooked
                                 ? _deviceCapacity > 0
                                     ? 'All $_deviceCapacity slots are booked for this time'
                                     : 'This time slot is already booked'
@@ -2364,11 +2390,44 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                     : const Text('Tap to select'),
             trailing: const Icon(Icons.access_time),
             onTap: () async {
+              // Check if selected date is today
+              final now = DateTime.now();
+              final today = DateTime(now.year, now.month, now.day);
+              final selectedDateOnly = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+              final isToday = selectedDateOnly.isAtSameMomentAs(today);
+              
+              // Set initial time to current time if today, otherwise allow any time
+              final initialTime = _customTime ?? (isToday ? TimeOfDay.now() : const TimeOfDay(hour: 9, minute: 0));
+              
               final time = await showTimePicker(
                 context: context,
-                initialTime: _customTime ?? TimeOfDay.now(),
+                initialTime: initialTime,
               );
+              
               if (time != null) {
+                // If today, validate that selected time is not in the past
+                if (isToday) {
+                  final selectedDateTime = DateTime(
+                    now.year,
+                    now.month,
+                    now.day,
+                    time.hour,
+                    time.minute,
+                  );
+                  if (selectedDateTime.isBefore(now.subtract(const Duration(minutes: 1)))) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Cannot select a time that has already passed'),
+                          backgroundColor: Colors.red,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                }
+                
                 setState(() {
                   _customTime = time;
                 });

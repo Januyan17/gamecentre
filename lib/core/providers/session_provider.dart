@@ -453,6 +453,11 @@ class SessionProvider extends ChangeNotifier {
     }
     
     await _service.closeSession(activeSessionId!, finalTotal);
+    
+    // Clear slot availability cache when session is closed
+    // This ensures slots are immediately freed up for new bookings
+    DeviceCapacityService.clearCapacityCache();
+    
     activeSessionId = null;
     currentTotal = 0;
     services = [];

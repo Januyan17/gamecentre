@@ -1265,9 +1265,18 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             const SizedBox(height: 8),
                             InkWell(
                               onTap: () async {
+                                // Check if selected date is today
+                                final now = DateTime.now();
+                                final today = DateTime(now.year, now.month, now.day);
+                                final selectedDateOnly = DateTime(dialogSelectedDate.year, dialogSelectedDate.month, dialogSelectedDate.day);
+                                final isToday = selectedDateOnly.isAtSameMomentAs(today);
+                                
+                                // Set initial time to current time if today, otherwise allow any time
+                                final initialTime = _customTime ?? (isToday ? TimeOfDay.now() : const TimeOfDay(hour: 9, minute: 0));
+                                
                                 final picked = await showTimePicker(
                                   context: context,
-                                  initialTime: _customTime ?? TimeOfDay.now(),
+                                  initialTime: initialTime,
                                   builder: (context, child) {
                                     return MediaQuery(
                                       data: MediaQuery.of(
@@ -1277,7 +1286,31 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                     );
                                   },
                                 );
+                                
                                 if (picked != null) {
+                                  // If today, validate that selected time is not in the past
+                                  if (isToday) {
+                                    final selectedDateTime = DateTime(
+                                      now.year,
+                                      now.month,
+                                      now.day,
+                                      picked.hour,
+                                      picked.minute,
+                                    );
+                                    if (selectedDateTime.isBefore(now.subtract(const Duration(minutes: 1)))) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Cannot select a time that has already passed'),
+                                            backgroundColor: Colors.red,
+                                            duration: Duration(seconds: 2),
+                                          ),
+                                        );
+                                      }
+                                      return;
+                                    }
+                                  }
+                                  
                                   setDialogState(() {
                                     _customTime = picked;
                                   });
@@ -1326,9 +1359,32 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                   _timeSlots.map((slot) {
                                     final isBooked = dialogBookedSlots.contains(slot);
                                     final isSelected = _selectedTimeSlot == slot;
+                                    
+                                    // Check if time slot has passed (only for today's date)
+                                    final now = DateTime.now();
+                                    final today = DateTime(now.year, now.month, now.day);
+                                    final selectedDateOnly = DateTime(dialogSelectedDate.year, dialogSelectedDate.month, dialogSelectedDate.day);
+                                    final isToday = selectedDateOnly.isAtSameMomentAs(today);
+                                    
+                                    bool isPastTime = false;
+                                    if (isToday) {
+                                      // Convert 12-hour format to 24-hour format for comparison
+                                      final slot24Hour = _formatTime24Hour(slot);
+                                      final slotParts = slot24Hour.split(':');
+                                      if (slotParts.length == 2) {
+                                        final slotHour = int.tryParse(slotParts[0]) ?? 0;
+                                        final slotMinute = int.tryParse(slotParts[1]) ?? 0;
+                                        final slotDateTime = DateTime(now.year, now.month, now.day, slotHour, slotMinute);
+                                        // Disable if slot time has passed (with 1 minute buffer for safety)
+                                        isPastTime = slotDateTime.isBefore(now.subtract(const Duration(minutes: 1)));
+                                      }
+                                    }
+                                    
+                                    final isDisabled = isBooked || isPastTime;
+                                    
                                     return GestureDetector(
                                       onTap:
-                                          isBooked
+                                          isDisabled
                                               ? null
                                               : () {
                                                 setDialogState(() {
@@ -1342,7 +1398,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                         ),
                                         decoration: BoxDecoration(
                                           color:
-                                              isBooked
+                                              isPastTime
+                                                  ? Colors.grey.shade300
+                                                  : isBooked
                                                   ? Colors.red.shade300
                                                   : isSelected
                                                   ? Colors.purple.shade300
@@ -1350,7 +1408,9 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                           borderRadius: BorderRadius.circular(8),
                                           border: Border.all(
                                             color:
-                                                isBooked
+                                                isPastTime
+                                                    ? Colors.grey.shade600
+                                                    : isBooked
                                                     ? Colors.red.shade600
                                                     : isSelected
                                                     ? Colors.purple.shade700
@@ -1362,10 +1422,16 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
-                                              isBooked ? Icons.close : Icons.check,
+                                              isPastTime
+                                                  ? Icons.access_time
+                                                  : isBooked
+                                                  ? Icons.close
+                                                  : Icons.check,
                                               size: 14,
                                               color:
-                                                  isBooked
+                                                  isPastTime
+                                                      ? Colors.grey.shade700
+                                                      : isBooked
                                                       ? Colors.red.shade900
                                                       : isSelected
                                                       ? Colors.white
@@ -1378,11 +1444,14 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 12,
                                                 color:
-                                                    isBooked
+                                                    isPastTime
+                                                        ? Colors.grey.shade700
+                                                        : isBooked
                                                         ? Colors.red.shade900
                                                         : isSelected
                                                         ? Colors.white
                                                         : Colors.green.shade900,
+                                                decoration: isPastTime ? TextDecoration.lineThrough : null,
                                               ),
                                             ),
                                           ],

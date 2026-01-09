@@ -191,6 +191,8 @@ class DeviceCapacityService {
         }
 
         // Also check closed sessions for today's date
+        // IMPORTANT: For closed sessions, use actual endTime if available
+        // This ensures slots are freed up when sessions end early
         if (date == todayId) {
           try {
             final historySessionsSnapshot = await _firestore
@@ -203,6 +205,13 @@ class DeviceCapacityService {
             for (var sessionDoc in historySessionsSnapshot.docs) {
               final sessionData = sessionDoc.data();
               final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+              
+              // Get actual session end time if available
+              final sessionEndTime = sessionData['endTime'] as Timestamp?;
+              DateTime? actualEndTime;
+              if (sessionEndTime != null) {
+                actualEndTime = sessionEndTime.toDate();
+              }
 
               for (var service in services) {
                 final serviceType = service['type'] as String? ?? '';
@@ -216,12 +225,31 @@ class DeviceCapacityService {
                   final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
                   if (serviceDateId != date) continue;
 
-                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
-                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-                  final serviceDurationHours = hours + (minutes / 60.0);
+                  // Use actual end time if session ended early, otherwise use scheduled duration
+                  double serviceEndDecimal;
+                  if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                    // Session ended early - use actual end time
+                    serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                    // If end time is on a different day, use the scheduled end time instead
+                    final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
+                    if (endDateId != date) {
+                      // End time is on different date, use scheduled duration
+                      final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                      final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                      final serviceDurationHours = hours + (minutes / 60.0);
+                      final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                      serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                    }
+                  } else {
+                    // Use scheduled duration (session completed full duration or no end time recorded)
+                    final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                    final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                    final serviceDurationHours = hours + (minutes / 60.0);
+                    final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                    serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                  }
 
                   final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-                  final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
 
                   // Check for overlap
                   if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
@@ -239,6 +267,7 @@ class DeviceCapacityService {
         }
       } else {
         // For past dates, check history sessions
+        // Use actual endTime if available for past sessions too
         try {
           final historySessionsSnapshot = await _firestore
               .collection('days')
@@ -250,6 +279,13 @@ class DeviceCapacityService {
           for (var sessionDoc in historySessionsSnapshot.docs) {
             final sessionData = sessionDoc.data();
             final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+            
+            // Get actual session end time if available
+            final sessionEndTime = sessionData['endTime'] as Timestamp?;
+            DateTime? actualEndTime;
+            if (sessionEndTime != null) {
+              actualEndTime = sessionEndTime.toDate();
+            }
 
             for (var service in services) {
               final serviceType = service['type'] as String? ?? '';
@@ -263,12 +299,31 @@ class DeviceCapacityService {
                 final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
                 if (serviceDateId != date) continue;
 
-                final hours = (service['hours'] as num?)?.toInt() ?? 0;
-                final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-                final serviceDurationHours = hours + (minutes / 60.0);
+                // Use actual end time if session ended early, otherwise use scheduled duration
+                double serviceEndDecimal;
+                if (actualEndTime != null) {
+                  final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
+                  if (endDateId == date) {
+                    // End time is on same date - use actual end time
+                    serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                  } else {
+                    // End time is on different date, use scheduled duration
+                    final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                    final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                    final serviceDurationHours = hours + (minutes / 60.0);
+                    final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                    serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                  }
+                } else {
+                  // Use scheduled duration (no end time recorded)
+                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                  final serviceDurationHours = hours + (minutes / 60.0);
+                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                  serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                }
 
                 final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-                final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
 
                 // Check for overlap
                 if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {

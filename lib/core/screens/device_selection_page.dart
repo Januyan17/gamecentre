@@ -6,7 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/session_provider.dart';
 import '../services/price_calculator.dart';
 import '../services/session_service.dart';
-import 'session_detail_page.dart';
+import '../services/notification_service.dart';
+import '../services/device_capacity_service.dart';
 
 class DeviceSelectionPage extends StatefulWidget {
   const DeviceSelectionPage({super.key});
@@ -1179,9 +1180,16 @@ class BookingToSessionConverter {
         startTime: startTime,
       );
 
-      // Add all services to the session
+      // Add all services to the session and schedule notifications
       for (var service in services) {
         await _sessionService.addService(sessionId, service);
+        
+        // Schedule notification for this service
+        await BookingToSessionConverter._scheduleNotificationForServiceFromBooking(
+          service: service,
+          sessionId: sessionId,
+          customerName: customerName,
+        );
       }
 
       // Save booking to history before deleting
@@ -1201,6 +1209,10 @@ class BookingToSessionConverter {
 
       // Remove booking from bookings collection
       await _firestore.collection('bookings').doc(bookingId).delete();
+
+      // IMPORTANT: Clear slot availability cache when booking is converted to session
+      // This ensures slot availability is immediately updated
+      DeviceCapacityService.clearCapacityCache();
 
       return sessionId;
     } catch (e) {
@@ -1474,6 +1486,87 @@ class BookingToSessionConverter {
           throw Exception('Number of people must be greater than 0');
         }
         break;
+    }
+  }
+
+  /// Schedule notification for a service when converting from booking
+  static Future<void> _scheduleNotificationForServiceFromBooking({
+    required Map<String, dynamic> service,
+    required String sessionId,
+    required String customerName,
+  }) async {
+    try {
+      final serviceType = service['type'] as String? ?? '';
+      final serviceId = service['id'] as String? ?? '';
+      
+      if (serviceId.isEmpty) {
+        debugPrint('⚠️ Cannot schedule notification: service ID is empty');
+        return;
+      }
+
+      DateTime? endTime;
+
+      // Calculate end time based on service type (same logic as SessionProvider)
+      if (serviceType == 'PS4' || serviceType == 'PS5') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 0;
+          final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+          endTime = startTime.add(Duration(hours: hours, minutes: minutes));
+        }
+      } else if (serviceType == 'Theatre') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final hours = (service['hours'] as num?)?.toInt() ?? 1;
+          endTime = startTime.add(Duration(hours: hours));
+        }
+      } else if (serviceType == 'Simulator') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final games = (service['games'] as num?)?.toInt() ?? 1;
+          final duration = games * 5; // 5 minutes per game
+          endTime = startTime.add(Duration(minutes: duration));
+        }
+      } else if (serviceType == 'VR') {
+        final startTimeStr = service['startTime'] as String?;
+        if (startTimeStr != null) {
+          final startTime = DateTime.parse(startTimeStr);
+          final games = (service['games'] as num?)?.toInt() ?? 1;
+          final duration = games * 5; // 5 minutes per game
+          endTime = startTime.add(Duration(minutes: duration));
+        }
+      }
+
+      // Schedule notification if end time is calculated
+      if (endTime != null) {
+        debugPrint('📅 Scheduling notification for service from booking:');
+        debugPrint('   Service Type: $serviceType');
+        debugPrint('   Service ID: $serviceId');
+        debugPrint('   Start Time: ${service['startTime']}');
+        debugPrint('   End Time: $endTime');
+        debugPrint('   Current Time: ${DateTime.now()}');
+        
+        await NotificationService().scheduleServiceTimeUpNotification(
+          serviceId: serviceId,
+          serviceType: serviceType,
+          customerName: customerName,
+          endTime: endTime,
+          sessionId: sessionId,
+        );
+        
+        debugPrint('✅ Notification scheduled successfully for $serviceType from booking');
+      } else {
+        debugPrint('⚠️ Cannot schedule notification: endTime is null');
+        debugPrint('   Service Type: $serviceType');
+        debugPrint('   Service Data: $service');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error scheduling notification from booking: $e');
+      debugPrint('Stack trace: $stackTrace');
+      // Don't throw - notification failure shouldn't break booking conversion
     }
   }
 }
