@@ -5,6 +5,7 @@ import 'finance_tab.dart';
 import 'bookings_page.dart';
 import 'pricing_settings_page.dart';
 import 'password_dialog.dart';
+import 'user_data_export_page.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -136,6 +137,27 @@ class SettingsPlaceholder extends StatelessWidget {
               label: const Text('Open Pricing Settings'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.purple.shade700,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const UserDataExportPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.file_download),
+              label: const Text('Export User Data'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.shade700,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
