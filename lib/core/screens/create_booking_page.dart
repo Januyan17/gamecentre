@@ -952,8 +952,10 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         'serviceType': _selectedServiceType,
         'durationHours': durationHours,
         'slotId': slotId, // Assign slot ID
-        if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4')
+        if (_selectedServiceType == 'PS5' || _selectedServiceType == 'PS4') ...{
           'consoleCount': _consoleCount,
+          'additionalControllers': _additionalControllers,
+        },
         if (_selectedServiceType == 'Simulator' ||
             _selectedServiceType == 'VR') ...{
           'numberOfPeople': _numberOfPeople,

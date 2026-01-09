@@ -1154,8 +1154,9 @@ class BookingToSessionConverter {
         throw Exception('Time slot is required');
       }
 
-      // Parse time slot to create startTime
-      final startTime = _parseTimeSlotToDateTime(date, timeSlot);
+      // Use current time as start time (customer may have come late)
+      // This ensures notifications are scheduled based on actual start time
+      final startTime = DateTime.now();
 
       // Create active session with booking reference
       final sessionId = await _sessionService.createSession(
@@ -1172,6 +1173,7 @@ class BookingToSessionConverter {
       });
 
       // Convert booking to service(s) based on service type
+      // Use actual start time (current time) instead of booking time
       final services = await _convertBookingToServices(
         bookingData: bookingData,
         startTime: startTime,
@@ -1280,9 +1282,8 @@ class BookingToSessionConverter {
     final hours = durationHours.floor();
     final minutes = ((durationHours - hours) * 60).round();
 
-    // For now, we assume no additional controllers from booking
-    // This can be extended if bookings include controller information
-    final additionalControllers = 0;
+    // Get additional controllers from booking data
+    final additionalControllers = (bookingData['additionalControllers'] as num?)?.toInt() ?? 0;
 
     // Calculate price using the same logic as device_selection_page
     double price;
