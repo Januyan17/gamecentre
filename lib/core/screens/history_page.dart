@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:rowzow/core/services/firebase_service.dart';
 import 'package:rowzow/core/services/session_service.dart';
 import 'package:rowzow/core/services/price_calculator.dart';
+import 'package:rowzow/core/services/device_capacity_service.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -269,6 +270,10 @@ class _HistoryPageState extends State<HistoryPage> {
 
                   try {
                     await _sessionService.deleteHistorySession(dateId, sessionId, displayAmount);
+
+                    // Clear slot availability cache when history session is deleted
+                    // This ensures slots are immediately freed up for new bookings
+                    DeviceCapacityService.clearCapacityCache();
 
                     await Future.delayed(const Duration(milliseconds: 500));
                     navigator.pop();

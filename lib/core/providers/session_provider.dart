@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:rowzow/core/services/session_service.dart';
 import 'package:rowzow/core/services/notification_service.dart';
 import 'package:rowzow/core/services/device_capacity_service.dart';
@@ -475,7 +476,53 @@ class SessionProvider extends ChangeNotifier {
       }
     }
     
+    // IMPORTANT: Get bookingId before deleting session
+    // If session was converted from a booking, we need to delete the booking_history entry
+    // to free up the booking time slots
+    String? bookingId;
+    try {
+      final sessionDoc = await _service.sessionsRef().doc(sessionId).get();
+      if (sessionDoc.exists) {
+        final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+        bookingId = sessionData?['bookingId'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Error getting bookingId from session: $e');
+    }
+    
     await _service.deleteActiveSession(sessionId);
+    
+    // If this session was converted from a booking, delete the booking_history entry
+    // This frees up the booking time slots
+    if (bookingId != null && bookingId.isNotEmpty) {
+      try {
+        final firestore = FirebaseFirestore.instance;
+        final bookingHistoryDoc = await firestore
+            .collection('booking_history')
+            .doc(bookingId)
+            .get();
+        
+        if (bookingHistoryDoc.exists) {
+          final bookingData = bookingHistoryDoc.data();
+          final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
+          
+          // Only delete if status is 'converted_to_session'
+          // This ensures we only delete bookings that were converted to this session
+          if (status == 'converted_to_session') {
+            await firestore.collection('booking_history').doc(bookingId).delete();
+            debugPrint('✅ Deleted booking_history entry for bookingId: $bookingId');
+          }
+        }
+      } catch (e) {
+        debugPrint('Error deleting booking_history entry: $e');
+        // Don't throw - session is already deleted, just log the error
+      }
+    }
+    
+    // Clear slot availability cache when session is deleted
+    // This ensures slots are immediately freed up for new bookings
+    DeviceCapacityService.clearCapacityCache();
+    
     // If the deleted session was the active one, clear it
     if (activeSessionId == sessionId) {
       activeSessionId = null;

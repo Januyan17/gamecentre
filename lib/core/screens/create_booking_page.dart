@@ -2133,8 +2133,6 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
       '22:30',
       '23:00',
       '23:30',
-      '24:00',
-      '24:30',
     ];
 
     // Convert to 12-hour format for display

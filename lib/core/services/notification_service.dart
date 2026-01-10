@@ -34,6 +34,56 @@ Future<void> _checkAndShowNotification(
     // Initialize Firestore in background isolate
     final firestore = FirebaseFirestore.instance;
 
+    // Get service type from params to check notification toggle first
+    final serviceType = params['serviceType'] as String? ?? '';
+    
+    // Check notification toggle setting FIRST (before checking session status)
+    bool notificationsEnabled = true;
+    try {
+      final notificationDoc = await firestore
+          .collection('settings')
+          .doc('notifications')
+          .get()
+          .timeout(const Duration(seconds: 3));
+      if (notificationDoc.exists) {
+        final data = notificationDoc.data();
+        // Map service type to setting key (case-insensitive)
+        final serviceTypeLower = serviceType.toLowerCase();
+        String settingKey;
+        if (serviceTypeLower == 'ps4') {
+          settingKey = 'ps4';
+        } else if (serviceTypeLower == 'ps5') {
+          settingKey = 'ps5';
+        } else if (serviceTypeLower == 'vr') {
+          settingKey = 'vr';
+        } else if (serviceTypeLower == 'simulator') {
+          settingKey = 'simulator';
+        } else if (serviceTypeLower == 'theatre') {
+          settingKey = 'theatre';
+        } else {
+          // Unknown service type, default to enabled
+          settingKey = '';
+        }
+
+        if (settingKey.isNotEmpty) {
+          notificationsEnabled = data?[settingKey] ?? true;
+        }
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ Could not check notification setting, defaulting to enabled: $e',
+      );
+      // Default to enabled if check fails
+    }
+
+    // If notifications are disabled for this service type, don't show notification
+    if (!notificationsEnabled) {
+      debugPrint(
+        'ℹ️ Notifications are disabled for $serviceType. Not showing notification.',
+      );
+      return;
+    }
+
     // Check if session is still active in Firestore with timeout
     DocumentSnapshot? sessionDoc;
     bool checkFailed = false;
@@ -46,31 +96,102 @@ Future<void> _checkAndShowNotification(
           .timeout(const Duration(seconds: 5));
     } catch (e) {
       debugPrint(
-        '⚠️ Firestore query failed: $e. Will show notification anyway.',
+        '⚠️ Firestore query failed: $e. Will check closed sessions before showing notification.',
       );
       checkFailed = true;
     }
 
-    // If Firestore check failed (network/initialization error), show notification anyway
-    if (checkFailed || sessionDoc == null) {
-      final title = params['title'] as String? ?? 'Time Up';
-      final body = params['body'] as String? ?? 'Service time completed';
-      debugPrint(
-        '⚠️ Firestore check failed, showing notification anyway: $title - $body',
-      );
-      await _showNotificationFromCallback(id, title, body);
+    // If session exists in active_sessions, check its status
+    bool sessionIsActive = false;
+    bool sessionIsClosed = false;
+    
+    if (!checkFailed && sessionDoc != null && sessionDoc.exists) {
+      final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+      if (sessionData != null) {
+        final status = (sessionData['status'] as String? ?? 'active').toLowerCase().trim();
+        if (status == 'closed') {
+          sessionIsClosed = true;
+          debugPrint(
+            'ℹ️ Session $sessionId is closed in active_sessions. Not showing notification.',
+          );
+        } else {
+          sessionIsActive = true;
+        }
+      }
+    } else if (!checkFailed && (sessionDoc == null || !sessionDoc.exists)) {
+      // Session not in active_sessions, check if it's in closed sessions
+      try {
+        // Try to find session in closed sessions (check today's date)
+        final today = DateTime.now();
+        final dateId = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+        
+        final closedSessionDoc = await firestore
+            .collection('days')
+            .doc(dateId)
+            .collection('sessions')
+            .doc(sessionId)
+            .get()
+            .timeout(const Duration(seconds: 3));
+        
+        if (closedSessionDoc.exists) {
+          sessionIsClosed = true;
+          debugPrint(
+            'ℹ️ Session $sessionId is in closed sessions. Not showing notification.',
+          );
+        } else {
+          // Also check yesterday in case notification fires right after midnight
+          final yesterday = today.subtract(const Duration(days: 1));
+          final yesterdayId = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+          
+          final yesterdayClosedDoc = await firestore
+              .collection('days')
+              .doc(yesterdayId)
+              .collection('sessions')
+              .doc(sessionId)
+              .get()
+              .timeout(const Duration(seconds: 3));
+          
+          if (yesterdayClosedDoc.exists) {
+            sessionIsClosed = true;
+            debugPrint(
+              'ℹ️ Session $sessionId is in closed sessions (yesterday). Not showing notification.',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not check closed sessions: $e');
+        // If we can't check closed sessions, assume session might be closed
+        // Don't show notification to be safe
+        debugPrint(
+          'ℹ️ Cannot verify session status. Not showing notification to avoid false alerts.',
+        );
+        return;
+      }
+    }
+
+    // If session is closed, don't show notification
+    if (sessionIsClosed) {
       return;
     }
 
-    // Only show notification if session is still active
-    if (!sessionDoc.exists) {
+    // If Firestore check failed and we couldn't verify session status, don't show notification
+    // This prevents false notifications for closed sessions
+    if (checkFailed && !sessionIsActive) {
       debugPrint(
-        'ℹ️ Session $sessionId is no longer active. Not showing notification.',
+        'ℹ️ Cannot verify session status due to Firestore error. Not showing notification to avoid false alerts.',
       );
       return;
     }
 
-    final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+    // Only proceed if session is confirmed active
+    if (!sessionIsActive) {
+      debugPrint(
+        'ℹ️ Session $sessionId is not active. Not showing notification.',
+      );
+      return;
+    }
+
+    final sessionData = sessionDoc!.data() as Map<String, dynamic>?;
     if (sessionData == null) {
       debugPrint(
         'ℹ️ Session $sessionId has no data. Not showing notification.',
@@ -113,58 +234,9 @@ Future<void> _checkAndShowNotification(
       debugPrint(
         '⚠️ Service ID not found, but session has $serviceType services. Will check notification setting.',
       );
-      // Continue to check notification settings - don't return yet
+      // Continue - notification toggle already checked above
     } else {
       debugPrint('✅ Service $serviceId found in session $sessionId');
-    }
-
-    // Get service type from params to check specific notification setting
-    final serviceType = params['serviceType'] as String? ?? '';
-
-    // Check if notifications are enabled for this specific service type
-    bool notificationsEnabled = true;
-    try {
-      final notificationDoc = await firestore
-          .collection('settings')
-          .doc('notifications')
-          .get()
-          .timeout(const Duration(seconds: 3));
-      if (notificationDoc.exists) {
-        final data = notificationDoc.data();
-        // Map service type to setting key (case-insensitive)
-        final serviceTypeLower = serviceType.toLowerCase();
-        String settingKey;
-        if (serviceTypeLower == 'ps4') {
-          settingKey = 'ps4';
-        } else if (serviceTypeLower == 'ps5') {
-          settingKey = 'ps5';
-        } else if (serviceTypeLower == 'vr') {
-          settingKey = 'vr';
-        } else if (serviceTypeLower == 'simulator') {
-          settingKey = 'simulator';
-        } else if (serviceTypeLower == 'theatre') {
-          settingKey = 'theatre';
-        } else {
-          // Unknown service type, default to enabled
-          settingKey = '';
-        }
-
-        if (settingKey.isNotEmpty) {
-          notificationsEnabled = data?[settingKey] ?? true;
-        }
-      }
-    } catch (e) {
-      debugPrint(
-        '⚠️ Could not check notification setting, defaulting to enabled: $e',
-      );
-      // Default to enabled if check fails
-    }
-
-    if (!notificationsEnabled) {
-      debugPrint(
-        'ℹ️ Notifications are disabled for $serviceType. Not showing notification.',
-      );
-      return;
     }
 
     // Session is still active and service exists, show notification

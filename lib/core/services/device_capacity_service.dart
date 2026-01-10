@@ -145,11 +145,53 @@ class DeviceCapacityService {
         }
       }
 
-      // Check if date is in the past
+      // Check if date is in the past (needed for converted bookings check)
       final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final isPastDate = date.compareTo(todayId) < 0;
 
+      // IMPORTANT: Also check booking_history for converted bookings (for today/future dates)
+      // When a booking is converted to active session, it's moved to booking_history with status 'converted_to_session'
+      // We need to block the original booking time slots even after conversion
+      if (!isPastDate) {
+        try {
+          final convertedBookingsSnapshot = await _firestore
+              .collection('booking_history')
+              .where('date', isEqualTo: date)
+              .where('serviceType', isEqualTo: deviceType)
+              .where('status', isEqualTo: 'converted_to_session')
+              .get();
+
+          for (var doc in convertedBookingsSnapshot.docs) {
+            final data = doc.data();
+            final bookingTimeSlot = data['timeSlot'] as String? ?? '';
+            if (bookingTimeSlot.isEmpty) continue;
+
+            final bookingTimeParts = bookingTimeSlot.split(':');
+            if (bookingTimeParts.length != 2) continue;
+
+            final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+            final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+            final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+            final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+            final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+            // Check for overlap
+            final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
+            
+            if (hasOverlap) {
+              // For PS4/PS5, count the consoleCount (number of consoles booked)
+              // For other services, count as 1
+              final consoleCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
+              occupiedCount += consoleCount;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking converted bookings: $e');
+        }
+      }
+
       // Check active sessions (for today/future dates)
+      // Note: isPastDate is already declared above
       if (!isPastDate) {
         final activeSessionsSnapshot = await _firestore
             .collection('active_sessions')
@@ -160,6 +202,70 @@ class DeviceCapacityService {
           final sessionData = sessionDoc.data();
           final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
 
+          // IMPORTANT: Check if this session has a bookingTimeSlot (converted from booking)
+          // If yes, block the original booking time slots, not just the actual session start time
+          final bookingTimeSlot = sessionData['bookingTimeSlot'] as String? ?? '';
+          final bookingDate = sessionData['bookingDate'] as String? ?? '';
+          
+          if (bookingTimeSlot.isNotEmpty && bookingDate == date) {
+            // This session was converted from a booking - block original booking time slots
+            try {
+              // Try to get duration from booking history
+              final bookingId = sessionData['bookingId'] as String?;
+              double bookingDurationHours = 1.0; // Default
+              
+              if (bookingId != null) {
+                try {
+                  final bookingDoc = await _firestore
+                      .collection('booking_history')
+                      .doc(bookingId)
+                      .get();
+                  if (bookingDoc.exists) {
+                    final bookingData = bookingDoc.data();
+                    bookingDurationHours = (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
+                  }
+                } catch (e) {
+                  debugPrint('Error getting booking duration: $e');
+                }
+              }
+
+              // Parse booking time slot
+              final bookingTimeParts = bookingTimeSlot.split(':');
+              if (bookingTimeParts.length == 2) {
+                final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+                final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+                final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+                final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+                // Check for overlap with original booking time slots
+                final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
+                if (hasOverlap) {
+                  // For converted bookings, count as 1 (or consoleCount if available)
+                  // We need to get consoleCount from booking history if available
+                  int consoleCount = 1;
+                  if (bookingId != null) {
+                    try {
+                      final bookingDoc = await _firestore
+                          .collection('booking_history')
+                          .doc(bookingId)
+                          .get();
+                      if (bookingDoc.exists) {
+                        final bookingData = bookingDoc.data();
+                        consoleCount = (bookingData?['consoleCount'] as num?)?.toInt() ?? 1;
+                      }
+                    } catch (e) {
+                      debugPrint('Error getting console count: $e');
+                    }
+                  }
+                  occupiedCount += consoleCount;
+                }
+              }
+            } catch (e) {
+              debugPrint('Error processing booking time slot: $e');
+            }
+          }
+
+          // Also check actual service start time (for sessions not from bookings)
           for (var service in services) {
             final serviceType = service['type'] as String? ?? '';
             if (serviceType != deviceType) continue;
