@@ -471,12 +471,26 @@ class SessionProvider extends ChangeNotifier {
         if (bookingHistoryDoc.exists) {
           final bookingData = bookingHistoryDoc.data();
           final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
+          final serviceType = bookingData?['serviceType'] as String? ?? '';
           
           // Only delete if status is 'converted_to_session'
           // This ensures slots are freed up when session ends early
           if (status == 'converted_to_session') {
             await firestore.collection('booking_history').doc(bookingId).delete();
             debugPrint('✅ Deleted booking_history entry for early-ended session (bookingId: $bookingId)');
+            
+            // Also delete from theatre_bookings if this is a Theatre booking
+            if (serviceType == 'Theatre') {
+              final theatreBookingsQuery = await firestore
+                  .collection('theatre_bookings')
+                  .where('bookingId', isEqualTo: bookingId)
+                  .get();
+              
+              for (var theatreDoc in theatreBookingsQuery.docs) {
+                await theatreDoc.reference.delete();
+              }
+              debugPrint('✅ Deleted theatre_bookings entry for bookingId: $bookingId');
+            }
           }
         }
       } catch (e) {
@@ -535,12 +549,26 @@ class SessionProvider extends ChangeNotifier {
         if (bookingHistoryDoc.exists) {
           final bookingData = bookingHistoryDoc.data();
           final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
+          final serviceType = bookingData?['serviceType'] as String? ?? '';
           
           // Only delete if status is 'converted_to_session'
           // This ensures we only delete bookings that were converted to this session
           if (status == 'converted_to_session') {
             await firestore.collection('booking_history').doc(bookingId).delete();
             debugPrint('✅ Deleted booking_history entry for bookingId: $bookingId');
+            
+            // Also delete from theatre_bookings if this is a Theatre booking
+            if (serviceType == 'Theatre') {
+              final theatreBookingsQuery = await firestore
+                  .collection('theatre_bookings')
+                  .where('bookingId', isEqualTo: bookingId)
+                  .get();
+              
+              for (var theatreDoc in theatreBookingsQuery.docs) {
+                await theatreDoc.reference.delete();
+              }
+              debugPrint('✅ Deleted theatre_bookings entry for bookingId: $bookingId');
+            }
           }
         }
       } catch (e) {

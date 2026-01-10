@@ -47,10 +47,7 @@ class BookingLogicService {
         if (people == null) {
           throw Exception('Number of people is required for Theatre booking');
         }
-        return await PriceCalculator.theatre(
-          hours: hours,
-          people: people,
-        );
+        return await PriceCalculator.theatre(hours: hours, people: people);
       default:
         throw Exception('Unsupported device type: $deviceType');
     }
@@ -59,9 +56,7 @@ class BookingLogicService {
   /// Get price per person for VR/Simulator
   /// Each person gets 1 game (5 minutes)
   /// Returns the price for one person (1 game)
-  static Future<double> getPricePerPerson({
-    required String deviceType,
-  }) async {
+  static Future<double> getPricePerPerson({required String deviceType}) async {
     if (deviceType != 'VR' && deviceType != 'Simulator') {
       throw Exception('getPricePerPerson is only for VR and Simulator');
     }
@@ -107,11 +102,12 @@ class BookingLogicService {
       throw Exception('Controllers can only be added to PS4/PS5 sessions');
     }
 
-    final controllerPrice = await PriceCalculator.getAdditionalControllerPrice();
-    
+    final controllerPrice =
+        await PriceCalculator.getAdditionalControllerPrice();
+
     // Calculate total duration in hours (including partial hours)
     final totalHours = currentHours + (currentMinutes / 60.0);
-    
+
     // Price = controller price × number of controllers × total hours
     return controllerPrice * additionalControllers * totalHours;
   }
@@ -122,10 +118,11 @@ class BookingLogicService {
     required String deviceType,
   }) async {
     try {
-      final activeSessions = await _firestore
-          .collection('active_sessions')
-          .where('status', isEqualTo: 'active')
-          .get();
+      final activeSessions =
+          await _firestore
+              .collection('active_sessions')
+              .where('status', isEqualTo: 'active')
+              .get();
 
       for (var sessionDoc in activeSessions.docs) {
         final sessionData = sessionDoc.data();
@@ -155,10 +152,11 @@ class BookingLogicService {
     required String deviceType,
   }) async {
     try {
-      final activeSessions = await _firestore
-          .collection('active_sessions')
-          .where('status', isEqualTo: 'active')
-          .get();
+      final activeSessions =
+          await _firestore
+              .collection('active_sessions')
+              .where('status', isEqualTo: 'active')
+              .get();
 
       final List<Map<String, dynamic>> matchingSessions = [];
 
@@ -201,8 +199,10 @@ class BookingLogicService {
   }) async {
     try {
       // Check device capacity first
-      final capacity = await DeviceCapacityService.getDeviceCapacity(deviceType);
-      
+      final capacity = await DeviceCapacityService.getDeviceCapacity(
+        deviceType,
+      );
+
       if (capacity > 0) {
         // When capacity is configured, only check capacity
         // Multiple bookings can overlap if capacity allows
@@ -212,11 +212,11 @@ class BookingLogicService {
           timeSlot: timeSlot,
           durationHours: durationHours,
         );
-        
+
         // If capacity allows, no conflict; if capacity is full, conflict exists
         return !canBook;
       }
-      
+
       // When capacity == 0, use old behavior: check for any overlapping bookings
       // This is for backward compatibility when capacity is not configured
       // Parse time slot (format: "HH:MM")
@@ -232,15 +232,17 @@ class BookingLogicService {
       final endDecimal = startDecimal + durationHours;
 
       // Check bookings collection
-      final bookingsSnapshot = await _firestore
-          .collection('bookings')
-          .where('date', isEqualTo: date)
-          .where('serviceType', isEqualTo: deviceType)
-          .get();
+      final bookingsSnapshot =
+          await _firestore
+              .collection('bookings')
+              .where('date', isEqualTo: date)
+              .where('serviceType', isEqualTo: deviceType)
+              .get();
 
       for (var doc in bookingsSnapshot.docs) {
         final data = doc.data();
-        final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+        final status =
+            (data['status'] as String? ?? 'pending').toLowerCase().trim();
         if (status == 'cancelled') continue;
 
         final bookingTimeSlot = data['timeSlot'] as String? ?? '';
@@ -251,13 +253,53 @@ class BookingLogicService {
 
         final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
         final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
-        final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
-        final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+        final bookingStartDecimal =
+            bookingStartHour + (bookingStartMinute / 60.0);
+        final bookingDurationHours =
+            (data['durationHours'] as num?)?.toDouble() ?? 1.0;
         final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
 
         // Check for overlap
-        if ((startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal)) {
+        if ((startDecimal < bookingEndDecimal &&
+            endDecimal > bookingStartDecimal)) {
           return true; // Conflict found
+        }
+      }
+
+      // IMPORTANT: For Theatre, also check theatre_bookings collection
+      // This separate collection tracks all Theatre bookings for better conflict detection
+      if (deviceType == 'Theatre') {
+        try {
+          final theatreBookingsSnapshot = await _firestore
+              .collection('theatre_bookings')
+              .where('date', isEqualTo: date)
+              .where('status', isNotEqualTo: 'cancelled')
+              .get();
+
+          for (var doc in theatreBookingsSnapshot.docs) {
+            final data = doc.data();
+            final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
+            if (status == 'cancelled') continue;
+
+            final bookingTimeSlot = data['timeSlot'] as String? ?? '';
+            if (bookingTimeSlot.isEmpty) continue;
+
+            final bookingTimeParts = bookingTimeSlot.split(':');
+            if (bookingTimeParts.length != 2) continue;
+
+            final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+            final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+            final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+            final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+            final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+            // Check for overlap
+            if ((startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal)) {
+              return true; // Conflict found
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking theatre_bookings for conflict: $e');
         }
       }
 
@@ -265,16 +307,55 @@ class BookingLogicService {
       final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final isPastDate = date.compareTo(todayId) < 0;
 
+      // IMPORTANT: Also check booking_history for converted bookings (for today/future dates)
+      // When a booking is converted to active session, it's moved to booking_history with status 'converted_to_session'
+      // We need to check these to prevent conflicts
+      if (!isPastDate) {
+        try {
+          final convertedBookingsSnapshot = await _firestore
+              .collection('booking_history')
+              .where('date', isEqualTo: date)
+              .where('serviceType', isEqualTo: deviceType)
+              .where('status', isEqualTo: 'converted_to_session')
+              .get();
+
+          for (var doc in convertedBookingsSnapshot.docs) {
+            final data = doc.data();
+            final bookingTimeSlot = data['timeSlot'] as String? ?? '';
+            if (bookingTimeSlot.isEmpty) continue;
+
+            final bookingTimeParts = bookingTimeSlot.split(':');
+            if (bookingTimeParts.length != 2) continue;
+
+            final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+            final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+            final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+            final bookingDurationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+            final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+
+            // Check for overlap
+            if ((startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal)) {
+              return true; // Conflict found
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking converted bookings for conflict: $e');
+        }
+      }
+
       // Check active sessions (for today/future dates)
       if (!isPastDate) {
-        final activeSessionsSnapshot = await _firestore
-            .collection('active_sessions')
-            .where('status', isEqualTo: 'active')
-            .get();
+        final activeSessionsSnapshot =
+            await _firestore
+                .collection('active_sessions')
+                .where('status', isEqualTo: 'active')
+                .get();
 
         for (var sessionDoc in activeSessionsSnapshot.docs) {
           final sessionData = sessionDoc.data();
-          final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+          final services = List<Map<String, dynamic>>.from(
+            sessionData['services'] ?? [],
+          );
 
           for (var service in services) {
             final serviceType = service['type'] as String? ?? '';
@@ -292,11 +373,14 @@ class BookingLogicService {
               final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
               final serviceDurationHours = hours + (minutes / 60.0);
 
-              final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-              final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+              final serviceStartDecimal =
+                  startTime.hour + (startTime.minute / 60.0);
+              final serviceEndDecimal =
+                  serviceStartDecimal + serviceDurationHours;
 
               // Check for overlap
-              if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+              if ((startDecimal < serviceEndDecimal &&
+                  endDecimal > serviceStartDecimal)) {
                 return true; // Conflict found
               }
             } catch (e) {
@@ -307,19 +391,30 @@ class BookingLogicService {
         }
 
         // Also check closed sessions for today's date
-        // This ensures completed sessions today remain marked as unavailable
+        // IMPORTANT: For closed sessions, use actual endTime if available
+        // This ensures slots are freed up when sessions end early
         try {
           if (date == todayId) {
-            final historySessionsSnapshot = await _firestore
-                .collection('days')
-                .doc(date)
-                .collection('sessions')
-                .where('status', isEqualTo: 'closed')
-                .get();
+            final historySessionsSnapshot =
+                await _firestore
+                    .collection('days')
+                    .doc(date)
+                    .collection('sessions')
+                    .where('status', isEqualTo: 'closed')
+                    .get();
 
             for (var sessionDoc in historySessionsSnapshot.docs) {
               final sessionData = sessionDoc.data();
-              final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+              final services = List<Map<String, dynamic>>.from(
+                sessionData['services'] ?? [],
+              );
+              
+              // Get actual session end time if available
+              final sessionEndTime = sessionData['endTime'] as Timestamp?;
+              DateTime? actualEndTime;
+              if (sessionEndTime != null) {
+                actualEndTime = sessionEndTime.toDate();
+              }
 
               for (var service in services) {
                 final serviceType = service['type'] as String? ?? '';
@@ -330,18 +425,41 @@ class BookingLogicService {
 
                 try {
                   final startTime = DateTime.parse(startTimeStr);
-                  final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                  final serviceDateId = DateFormat(
+                    'yyyy-MM-dd',
+                  ).format(startTime);
                   if (serviceDateId != date) continue;
 
-                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
-                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-                  final serviceDurationHours = hours + (minutes / 60.0);
+                  // Use actual end time if session ended early, otherwise use scheduled duration
+                  double serviceEndDecimal;
+                  if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                    // Session ended early - use actual end time directly
+                    serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                    // If end time is on a different day, use the scheduled end time instead
+                    final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
+                    if (endDateId != date) {
+                      // End time is on different date, use scheduled duration
+                      final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                      final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                      final serviceDurationHours = hours + (minutes / 60.0);
+                      final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                      serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                    }
+                  } else {
+                    // Use scheduled duration (session completed full duration or no end time recorded)
+                    final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                    final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                    final serviceDurationHours = hours + (minutes / 60.0);
+                    final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                    serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                  }
 
-                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-                  final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                  final serviceStartDecimal =
+                      startTime.hour + (startTime.minute / 60.0);
 
-                  // Check for overlap
-                  if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                  // Check for overlap (only up to actual end time if session ended early)
+                  if ((startDecimal < serviceEndDecimal &&
+                      endDecimal > serviceStartDecimal)) {
                     return true; // Conflict found
                   }
                 } catch (e) {
@@ -358,16 +476,19 @@ class BookingLogicService {
         // For past dates, also check history sessions (closed/ended sessions)
         // This ensures past bookings remain marked as unavailable for historical tracking
         try {
-          final historySessionsSnapshot = await _firestore
-              .collection('days')
-              .doc(date)
-              .collection('sessions')
-              .where('status', isEqualTo: 'closed')
-              .get();
+          final historySessionsSnapshot =
+              await _firestore
+                  .collection('days')
+                  .doc(date)
+                  .collection('sessions')
+                  .where('status', isEqualTo: 'closed')
+                  .get();
 
           for (var sessionDoc in historySessionsSnapshot.docs) {
             final sessionData = sessionDoc.data();
-            final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+            final services = List<Map<String, dynamic>>.from(
+              sessionData['services'] ?? [],
+            );
 
             for (var service in services) {
               final serviceType = service['type'] as String? ?? '';
@@ -378,18 +499,23 @@ class BookingLogicService {
 
               try {
                 final startTime = DateTime.parse(startTimeStr);
-                final serviceDateId = DateFormat('yyyy-MM-dd').format(startTime);
+                final serviceDateId = DateFormat(
+                  'yyyy-MM-dd',
+                ).format(startTime);
                 if (serviceDateId != date) continue;
 
                 final hours = (service['hours'] as num?)?.toInt() ?? 0;
                 final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
                 final serviceDurationHours = hours + (minutes / 60.0);
 
-                final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
-                final serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                final serviceStartDecimal =
+                    startTime.hour + (startTime.minute / 60.0);
+                final serviceEndDecimal =
+                    serviceStartDecimal + serviceDurationHours;
 
                 // Check for overlap
-                if ((startDecimal < serviceEndDecimal && endDecimal > serviceStartDecimal)) {
+                if ((startDecimal < serviceEndDecimal &&
+                    endDecimal > serviceStartDecimal)) {
                   return true; // Conflict found
                 }
               } catch (e) {

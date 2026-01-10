@@ -362,7 +362,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   // Use actual end time if session ended early, otherwise use scheduled duration
                   double serviceEndDecimal;
                   if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
-                    // Session ended early - use actual end time
+                    // Session ended early - use actual end time directly
                     serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
                     // If end time is on a different day, use the scheduled end time instead
                     final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
@@ -756,7 +756,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                             // Use actual end time if session ended early, otherwise use scheduled duration
                             double serviceEndDecimal;
                             if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
-                              // Session ended early - use actual end time
+                              // Session ended early - use actual end time directly
                               serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
                               // If end time is on a different day, use the scheduled end time instead
                               final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
@@ -2237,7 +2237,32 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
         'status': 'pending', // pending, confirmed, cancelled
       };
 
-      await _firestore.collection('bookings').add(bookingData);
+      // Create booking
+      final bookingRef = await _firestore.collection('bookings').add(bookingData);
+      final bookingId = bookingRef.id;
+
+      // IMPORTANT: For Theatre, also maintain a separate collection to track booked customers
+      // This helps prevent conflicts and track booking history
+      if (_selectedServiceType == 'Theatre') {
+        try {
+          await _firestore.collection('theatre_bookings').add({
+            'bookingId': bookingId,
+            'serviceType': 'Theatre',
+            'date': dateId,
+            'timeSlot': timeSlot24Hour,
+            'durationHours': durationHours,
+            'customerName': _nameController.text.trim(),
+            'phoneNumber': _phoneController.text.trim(),
+            'hours': _theatreHours,
+            'totalPeople': _theatrePeople,
+            'status': 'pending',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          debugPrint('Error creating theatre_bookings entry: $e');
+          // Don't fail the booking if this fails, just log it
+        }
+      }
 
       if (mounted) {
         Navigator.pop(dialogContext);
@@ -2503,17 +2528,23 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       // Try the specified collection first, then fallback to the other if not found
       bool deleted = false;
 
+      String? serviceType; // Store service type before deletion
+      
       if (isHistory) {
         try {
           // Check if document exists in booking_history
           final doc = await _firestore.collection('booking_history').doc(bookingId).get();
           if (doc.exists) {
+            final data = doc.data();
+            serviceType = data?['serviceType'] as String? ?? '';
             await _firestore.collection('booking_history').doc(bookingId).delete();
             deleted = true;
           } else {
             // Try bookings collection as fallback
             final bookingsDoc = await _firestore.collection('bookings').doc(bookingId).get();
             if (bookingsDoc.exists) {
+              final data = bookingsDoc.data();
+              serviceType = data?['serviceType'] as String? ?? '';
               await _firestore.collection('bookings').doc(bookingId).delete();
               deleted = true;
             }
@@ -2526,18 +2557,40 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
           // Check if document exists in bookings
           final doc = await _firestore.collection('bookings').doc(bookingId).get();
           if (doc.exists) {
+            final data = doc.data();
+            serviceType = data?['serviceType'] as String? ?? '';
             await _firestore.collection('bookings').doc(bookingId).delete();
             deleted = true;
           } else {
             // Try booking_history collection as fallback
             final historyDoc = await _firestore.collection('booking_history').doc(bookingId).get();
             if (historyDoc.exists) {
+              final data = historyDoc.data();
+              serviceType = data?['serviceType'] as String? ?? '';
               await _firestore.collection('booking_history').doc(bookingId).delete();
               deleted = true;
             }
           }
         } catch (e) {
           debugPrint('Error deleting from bookings: $e');
+        }
+      }
+
+      // IMPORTANT: Also delete from theatre_bookings collection if this is a Theatre booking
+      if (deleted && serviceType == 'Theatre') {
+        try {
+          // Delete from theatre_bookings collection
+          final theatreBookingsQuery = await _firestore
+              .collection('theatre_bookings')
+              .where('bookingId', isEqualTo: bookingId)
+              .get();
+          
+          for (var theatreDoc in theatreBookingsQuery.docs) {
+            await theatreDoc.reference.delete();
+          }
+        } catch (e) {
+          debugPrint('Error deleting from theatre_bookings: $e');
+          // Don't fail if this errors, just log it
         }
       }
 

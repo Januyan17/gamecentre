@@ -417,7 +417,7 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   // Use actual end time if session ended early, otherwise use scheduled duration
                   double serviceEndDecimal;
                   if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
-                    // Session ended early - use actual end time
+                    // Session ended early - use actual end time directly
                     serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
                     // If end time is on a different day, use the scheduled end time instead
                     final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
