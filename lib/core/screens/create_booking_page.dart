@@ -1035,7 +1035,21 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         'status': 'pending',
       };
 
-      await _firestore.collection('bookings').add(bookingData);
+      final bookingRef = await _firestore.collection('bookings').add(bookingData);
+      final bookingId = bookingRef.id;
+
+      // IMPORTANT: Save to all_bookings_history collection for complete booking history
+      // This separate collection tracks all bookings regardless of status
+      try {
+        await _firestore.collection('all_bookings_history').add({
+          'bookingId': bookingId,
+          ...bookingData,
+          'recordedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('Error saving to all_bookings_history: $e');
+        // Don't fail the booking if this fails, just log it
+      }
 
       if (mounted) {
         Navigator.pop(context); // Close loading

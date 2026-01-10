@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:rowzow/core/screens/booking_history_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'device_selection_page.dart';
@@ -192,12 +193,13 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       // We need to block the original booking time slots even after conversion
       if (!isPastDate) {
         try {
-          final convertedBookingsSnapshot = await _firestore
-              .collection('booking_history')
-              .where('date', isEqualTo: dateId)
-              .where('serviceType', isEqualTo: serviceType)
-              .where('status', isEqualTo: 'converted_to_session')
-              .get();
+          final convertedBookingsSnapshot =
+              await _firestore
+                  .collection('booking_history')
+                  .where('date', isEqualTo: dateId)
+                  .where('serviceType', isEqualTo: serviceType)
+                  .where('status', isEqualTo: 'converted_to_session')
+                  .get();
 
           for (var doc in convertedBookingsSnapshot.docs) {
             final data = doc.data();
@@ -244,23 +246,22 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
           // If yes, block the original booking time slots, not just the actual session start time
           final bookingTimeSlot = sessionData['bookingTimeSlot'] as String? ?? '';
           final bookingDate = sessionData['bookingDate'] as String? ?? '';
-          
+
           if (bookingTimeSlot.isNotEmpty && bookingDate == dateId) {
             // This session was converted from a booking - block original booking time slots
             try {
               // Try to get duration from booking history
               final bookingId = sessionData['bookingId'] as String?;
               double bookingDurationHours = 1.0; // Default
-              
+
               if (bookingId != null) {
                 try {
-                  final bookingDoc = await _firestore
-                      .collection('booking_history')
-                      .doc(bookingId)
-                      .get();
+                  final bookingDoc =
+                      await _firestore.collection('booking_history').doc(bookingId).get();
                   if (bookingDoc.exists) {
                     final bookingData = bookingDoc.data();
-                    bookingDurationHours = (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
+                    bookingDurationHours =
+                        (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
                   }
                 } catch (e) {
                   debugPrint('Error getting booking duration: $e');
@@ -339,7 +340,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
             for (var sessionDoc in historySessionsSnapshot.docs) {
               final sessionData = sessionDoc.data();
               final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
-              
+
               // Get actual session end time if available
               final sessionEndTime = sessionData['endTime'] as Timestamp?;
               DateTime? actualEndTime;
@@ -361,7 +362,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
                   // Use actual end time if session ended early, otherwise use scheduled duration
                   double serviceEndDecimal;
-                  if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                  if (actualEndTime != null &&
+                      actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
                     // Session ended early - use actual end time directly
                     serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
                     // If end time is on a different day, use the scheduled end time instead
@@ -583,12 +585,13 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   // We need to block the original booking time slots even after conversion
                   if (!isPastDate) {
                     try {
-                      final convertedBookingsSnapshot = await _firestore
-                          .collection('booking_history')
-                          .where('date', isEqualTo: dateId)
-                          .where('serviceType', isEqualTo: serviceType)
-                          .where('status', isEqualTo: 'converted_to_session')
-                          .get();
+                      final convertedBookingsSnapshot =
+                          await _firestore
+                              .collection('booking_history')
+                              .where('date', isEqualTo: dateId)
+                              .where('serviceType', isEqualTo: serviceType)
+                              .where('status', isEqualTo: 'converted_to_session')
+                              .get();
 
                       for (var doc in convertedBookingsSnapshot.docs) {
                         final data = doc.data() as Map<String, dynamic>;
@@ -637,7 +640,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                       // If yes, block the original booking time slots, not just the actual session start time
                       final bookingTimeSlot = sessionData['bookingTimeSlot'] as String? ?? '';
                       final bookingDate = sessionData['bookingDate'] as String? ?? '';
-                      
+
                       if (bookingTimeSlot.isNotEmpty && bookingDate == dateId) {
                         // This session was converted from a booking - block original booking time slots
                         // We need to get the duration from the booking history or use a default
@@ -645,16 +648,18 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                           // Try to get duration from booking history
                           final bookingId = sessionData['bookingId'] as String?;
                           double bookingDurationHours = 1.0; // Default
-                          
+
                           if (bookingId != null) {
                             try {
-                              final bookingDoc = await _firestore
-                                  .collection('booking_history')
-                                  .doc(bookingId)
-                                  .get();
+                              final bookingDoc =
+                                  await _firestore
+                                      .collection('booking_history')
+                                      .doc(bookingId)
+                                      .get();
                               if (bookingDoc.exists) {
                                 final bookingData = bookingDoc.data();
-                                bookingDurationHours = (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
+                                bookingDurationHours =
+                                    (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
                               }
                             } catch (e) {
                               debugPrint('Error getting booking duration: $e');
@@ -723,17 +728,20 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                   // This ensures slots are freed up when sessions end early (Bug 1 fix)
                   if (!isPastDate && dateId == todayId) {
                     try {
-                      final closedSessionsSnapshot = await _firestore
-                          .collection('days')
-                          .doc(dateId)
-                          .collection('sessions')
-                          .where('status', isEqualTo: 'closed')
-                          .get();
+                      final closedSessionsSnapshot =
+                          await _firestore
+                              .collection('days')
+                              .doc(dateId)
+                              .collection('sessions')
+                              .where('status', isEqualTo: 'closed')
+                              .get();
 
                       for (var sessionDoc in closedSessionsSnapshot.docs) {
                         final sessionData = sessionDoc.data();
-                        final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
-                        
+                        final services = List<Map<String, dynamic>>.from(
+                          sessionData['services'] ?? [],
+                        );
+
                         // Get actual session end time if available
                         final sessionEndTime = sessionData['endTime'] as Timestamp?;
                         DateTime? actualEndTime;
@@ -755,9 +763,11 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
 
                             // Use actual end time if session ended early, otherwise use scheduled duration
                             double serviceEndDecimal;
-                            if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                            if (actualEndTime != null &&
+                                actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
                               // Session ended early - use actual end time directly
-                              serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                              serviceEndDecimal =
+                                  actualEndTime.hour + (actualEndTime.minute / 60.0);
                               // If end time is on a different day, use the scheduled end time instead
                               final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
                               if (endDateId != dateId) {
@@ -765,7 +775,8 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                                 final hours = (service['hours'] as num?)?.toInt() ?? 0;
                                 final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
                                 final serviceDurationHours = hours + (minutes / 60.0);
-                                final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                                final serviceStartDecimal =
+                                    startTime.hour + (startTime.minute / 60.0);
                                 serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
                               }
                             } else {
@@ -773,14 +784,19 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
                               final hours = (service['hours'] as num?)?.toInt() ?? 0;
                               final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
                               final serviceDurationHours = hours + (minutes / 60.0);
-                              final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                              final serviceStartDecimal =
+                                  startTime.hour + (startTime.minute / 60.0);
                               serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
                             }
 
                             final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
 
                             // Mark all affected time slots (only up to actual end time if session ended early)
-                            for (double hour = serviceStartDecimal; hour < serviceEndDecimal; hour += 0.5) {
+                            for (
+                              double hour = serviceStartDecimal;
+                              hour < serviceEndDecimal;
+                              hour += 0.5
+                            ) {
                               final slotHour = hour.floor();
                               final slotMinute = ((hour - slotHour) * 60).round();
                               final slotStr =
@@ -2241,6 +2257,19 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       final bookingRef = await _firestore.collection('bookings').add(bookingData);
       final bookingId = bookingRef.id;
 
+      // IMPORTANT: Save to all_bookings_history collection for complete booking history
+      // This separate collection tracks all bookings regardless of status
+      try {
+        await _firestore.collection('all_bookings_history').add({
+          'bookingId': bookingId,
+          ...bookingData,
+          'recordedAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('Error saving to all_bookings_history: $e');
+        // Don't fail the booking if this fails, just log it
+      }
+
       // IMPORTANT: For Theatre, also maintain a separate collection to track booked customers
       // This helps prevent conflicts and track booking history
       if (_selectedServiceType == 'Theatre') {
@@ -2529,7 +2558,7 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       bool deleted = false;
 
       String? serviceType; // Store service type before deletion
-      
+
       if (isHistory) {
         try {
           // Check if document exists in booking_history
@@ -2580,11 +2609,12 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
       if (deleted && serviceType == 'Theatre') {
         try {
           // Delete from theatre_bookings collection
-          final theatreBookingsQuery = await _firestore
-              .collection('theatre_bookings')
-              .where('bookingId', isEqualTo: bookingId)
-              .get();
-          
+          final theatreBookingsQuery =
+              await _firestore
+                  .collection('theatre_bookings')
+                  .where('bookingId', isEqualTo: bookingId)
+                  .get();
+
           for (var theatreDoc in theatreBookingsQuery.docs) {
             await theatreDoc.reference.delete();
           }
@@ -2645,6 +2675,16 @@ class _BookingsPageState extends State<BookingsPage> with SingleTickerProviderSt
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BookingHistoryPage()),
+              );
+            },
+            tooltip: 'View All Booking History',
+          ),
           IconButton(
             icon: const Icon(Icons.calendar_today),
             onPressed: _selectDate,
