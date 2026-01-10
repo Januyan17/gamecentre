@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'core/providers/session_provider.dart';
+import 'core/providers/connectivity_provider.dart';
 import 'core/screens/main_navigation.dart';
+import 'core/screens/no_internet_screen.dart';
 import 'core/services/notification_service.dart';
 
 void main() async {
@@ -20,8 +22,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => SessionProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => SessionProvider()),
+        ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
+      ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Gaming Center Staff',
@@ -38,8 +43,27 @@ class MyApp extends StatelessWidget {
             elevation: 0,
           ),
         ),
-        home: const MainNavigation(),
+        home: const ConnectivityWrapper(),
       ),
+    );
+  }
+}
+
+/// Wrapper widget that shows NoInternetScreen when offline, MainNavigation when online
+class ConnectivityWrapper extends StatelessWidget {
+  const ConnectivityWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ConnectivityProvider>(
+      builder: (context, connectivityProvider, child) {
+        // Show no internet screen when offline
+        if (!connectivityProvider.isConnected) {
+          return const NoInternetScreen();
+        }
+        // Show main app when online
+        return const MainNavigation();
+      },
     );
   }
 }

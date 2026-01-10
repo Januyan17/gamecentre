@@ -75,14 +75,14 @@ class SessionProvider extends ChangeNotifier {
     try {
       // Check for booking conflicts before adding service
       await _checkBookingConflict(service);
-      
+
       // Store the startTime to find the service after refresh
       final startTimeStr = service['startTime'] as String?;
       final serviceType = service['type'] as String? ?? '';
-      
+
       await _service.addService(activeSessionId!, service);
       await refreshSession();
-      
+
       // After refresh, find the service that was just added from Firestore
       // This ensures we use the correct service ID that was actually saved
       Map<String, dynamic>? savedService;
@@ -104,7 +104,7 @@ class SessionProvider extends ChangeNotifier {
       } else {
         savedService = service; // Fallback to original service
       }
-      
+
       // Schedule notification for time-up (PS4, PS5, Theatre, Simulator, VR)
       // Use the service from Firestore to ensure correct ID
       await _scheduleNotificationForService(savedService, activeSessionId!);
@@ -118,7 +118,7 @@ class SessionProvider extends ChangeNotifier {
   Future<void> _checkBookingConflict(Map<String, dynamic> service) async {
     final serviceType = service['type'] as String? ?? '';
     final startTimeStr = service['startTime'] as String?;
-    
+
     if (startTimeStr == null || serviceType.isEmpty) {
       return; // No conflict check needed if no start time or service type
     }
@@ -126,10 +126,10 @@ class SessionProvider extends ChangeNotifier {
     try {
       final startTime = DateTime.parse(startTimeStr);
       final dateId = DateFormat('yyyy-MM-dd').format(startTime);
-      
+
       // Calculate duration based on service type
       double serviceDurationHours = 0.0;
-      
+
       if (serviceType == 'PS4' || serviceType == 'PS5') {
         final hours = (service['hours'] as num?)?.toInt() ?? 0;
         final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
@@ -149,10 +149,11 @@ class SessionProvider extends ChangeNotifier {
 
       // Check device capacity first
       final capacity = await DeviceCapacityService.getDeviceCapacity(serviceType);
-      
+
       if (capacity > 0) {
         // Use capacity-based checking: check if there are available slots
-        final serviceTime24Hour = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+        final serviceTime24Hour =
+            '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
         final availableSlots = await DeviceCapacityService.getAvailableSlots(
           deviceType: serviceType,
           date: dateId,
@@ -164,28 +165,31 @@ class SessionProvider extends ChangeNotifier {
         if (availableSlots <= 0 && availableSlots != -1) {
           // No slots available
           final serviceTimeStr = DateFormat('hh:mm a').format(startTime);
-          final serviceEndTime = startTime.add(Duration(
-            hours: serviceDurationHours.floor(),
-            minutes: ((serviceDurationHours - serviceDurationHours.floor()) * 60).round(),
-          ));
+          final serviceEndTime = startTime.add(
+            Duration(
+              hours: serviceDurationHours.floor(),
+              minutes: ((serviceDurationHours - serviceDurationHours.floor()) * 60).round(),
+            ),
+          );
           final serviceEndTimeStr = DateFormat('hh:mm a').format(serviceEndTime);
-          
+
           throw Exception(
             'Cannot add service: All $capacity $serviceType slots are fully booked at this time.\n\n'
             'Your service time: $serviceTimeStr - $serviceEndTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
             'Available slots: 0 of $capacity\n\n'
-            'Please wait until a slot becomes available or choose a different time.'
+            'Please wait until a slot becomes available or choose a different time.',
           );
         }
         // If availableSlots > 0 or -1 (unlimited), allow service addition
       } else {
         // Capacity is 0 (unlimited) - use old overlap-based checking for backward compatibility
         // Get existing bookings for this date and service type
-        final bookingsSnapshot = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('date', isEqualTo: dateId)
-            .where('serviceType', isEqualTo: serviceType)
-            .get();
+        final bookingsSnapshot =
+            await FirebaseFirestore.instance
+                .collection('bookings')
+                .where('date', isEqualTo: dateId)
+                .where('serviceType', isEqualTo: serviceType)
+                .get();
 
         // Check for conflicts
         final serviceStartHour = startTime.hour;
@@ -196,7 +200,7 @@ class SessionProvider extends ChangeNotifier {
         for (var doc in bookingsSnapshot.docs) {
           final data = doc.data();
           final status = (data['status'] as String? ?? 'pending').toLowerCase().trim();
-          
+
           // IMPORTANT: Check conflicts with 'pending', 'confirmed', and 'done' bookings
           // Only 'cancelled' bookings don't block (time slots are available)
           // Once a booking is made, it blocks the slot regardless of pending/done status
@@ -209,36 +213,40 @@ class SessionProvider extends ChangeNotifier {
           if (bookedTimeSlot.isEmpty) continue;
 
           final bookedDuration = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
-          
+
           // Parse booked time slot (e.g., "14:00")
           final bookedParts = bookedTimeSlot.split(':');
           if (bookedParts.length != 2) continue;
-          
+
           final bookedHour = int.tryParse(bookedParts[0]) ?? 0;
           final bookedStartDecimal = bookedHour.toDouble();
           final bookedEndDecimal = bookedStartDecimal + bookedDuration;
 
           // Check if service overlaps with booking
-          if ((serviceStartDecimal >= bookedStartDecimal && serviceStartDecimal < bookedEndDecimal) ||
+          if ((serviceStartDecimal >= bookedStartDecimal &&
+                  serviceStartDecimal < bookedEndDecimal) ||
               (serviceEndDecimal > bookedStartDecimal && serviceEndDecimal <= bookedEndDecimal) ||
-              (serviceStartDecimal <= bookedStartDecimal && serviceEndDecimal >= bookedEndDecimal)) {
+              (serviceStartDecimal <= bookedStartDecimal &&
+                  serviceEndDecimal >= bookedEndDecimal)) {
             // Format booked end time in 12-hour format
             final bookedEndHour = (bookedStartDecimal + bookedDuration).floor();
-            final bookedEndMinute = ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
-            final bookedEndTime24Hour = '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
+            final bookedEndMinute =
+                ((bookedStartDecimal + bookedDuration - bookedEndHour) * 60).round();
+            final bookedEndTime24Hour =
+                '${bookedEndHour.toString().padLeft(2, '0')}:${bookedEndMinute.toString().padLeft(2, '0')}';
             final bookedEndTime = _formatTime12Hour(bookedEndTime24Hour);
-            
+
             // Format service time in 12-hour format
             final serviceTimeStr = DateFormat('hh:mm a').format(startTime);
-            
+
             // Format booked time slot in 12-hour format
             final bookedTime12Hour = _formatTime12Hour(bookedTimeSlot);
-            
+
             throw Exception(
               'This time slot conflicts with an existing booking.\n\n'
               'Your service time: $serviceTimeStr (${serviceDurationHours.toStringAsFixed(1)}h)\n'
               'Existing booking: $bookedTime12Hour - $bookedEndTime (${bookedDuration.toStringAsFixed(1)}h)\n\n'
-              'Please choose a different time to avoid conflicts.'
+              'Please choose a different time to avoid conflicts.',
             );
           }
         }
@@ -266,24 +274,22 @@ class SessionProvider extends ChangeNotifier {
       final customerName = sessionData?['customerName'] as String? ?? 'Customer';
 
       final serviceType = service['type'] as String? ?? '';
-      
+
       // Get service ID - ALWAYS try to get it from Firestore first to ensure it matches
       // This is critical because the service object passed in might have a different ID
       String? serviceId;
       final services = List<Map<String, dynamic>>.from(sessionData?['services'] ?? []);
       final startTimeStr = service['startTime'] as String?;
-      
+
       if (startTimeStr != null && services.isNotEmpty) {
         // Find the service in Firestore that matches this service
         // Match by type and startTime to get the correct ID from Firestore
         try {
-          final matchingService = services.firstWhere(
-            (s) {
-              final sType = s['type'] as String?;
-              final sStartTime = s['startTime'] as String?;
-              return sType == serviceType && sStartTime == startTimeStr;
-            },
-          );
+          final matchingService = services.firstWhere((s) {
+            final sType = s['type'] as String?;
+            final sStartTime = s['startTime'] as String?;
+            return sType == serviceType && sStartTime == startTimeStr;
+          });
           serviceId = matchingService['id'] as String?;
           if (serviceId != null && serviceId.isNotEmpty) {
             debugPrint('✅ Found service ID from Firestore: $serviceId');
@@ -291,10 +297,12 @@ class SessionProvider extends ChangeNotifier {
         } catch (e) {
           debugPrint('⚠️ Could not find matching service in Firestore: $e');
           debugPrint('   Looking for: type=$serviceType, startTime=$startTimeStr');
-          debugPrint('   Available services: ${services.map((s) => '${s['type']}@${s['startTime']}').join(', ')}');
+          debugPrint(
+            '   Available services: ${services.map((s) => '${s['type']}@${s['startTime']}').join(', ')}',
+          );
         }
       }
-      
+
       // Fallback: try to get ID from service object
       if (serviceId == null || serviceId.isEmpty) {
         serviceId = service['id'] as String?;
@@ -302,13 +310,15 @@ class SessionProvider extends ChangeNotifier {
           debugPrint('📋 Using service ID from service object: $serviceId');
         }
       }
-      
+
       // Last resort: generate one (but this should rarely happen and might cause issues)
       if (serviceId == null || serviceId.isEmpty) {
         serviceId = '${sessionId}_${DateTime.now().millisecondsSinceEpoch}';
-        debugPrint('⚠️ Generated fallback service ID: $serviceId (WARNING: May not match Firestore)');
+        debugPrint(
+          '⚠️ Generated fallback service ID: $serviceId (WARNING: May not match Firestore)',
+        );
       }
-      
+
       debugPrint('📋 Scheduling notification for service:');
       debugPrint('   Service Type: $serviceType');
       debugPrint('   Service ID: $serviceId');
@@ -362,7 +372,7 @@ class SessionProvider extends ChangeNotifier {
         debugPrint('  Start Time: ${service['startTime']}');
         debugPrint('  End Time: $endTime');
         debugPrint('  Current Time: ${DateTime.now()}');
-        
+
         await NotificationService().scheduleServiceTimeUpNotification(
           serviceId: serviceId,
           serviceType: serviceType,
@@ -370,7 +380,7 @@ class SessionProvider extends ChangeNotifier {
           endTime: endTime,
           sessionId: activeSessionId!,
         );
-        
+
         debugPrint('✅ Notification scheduling completed for $serviceType');
       } else {
         debugPrint('⚠️ Cannot schedule notification: endTime is null');
@@ -384,12 +394,9 @@ class SessionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateService(
-    int index,
-    Map<String, dynamic> updatedService,
-  ) async {
+  Future<void> updateService(int index, Map<String, dynamic> updatedService) async {
     if (activeSessionId == null) return;
-    
+
     // Cancel old notification if service exists
     if (index < services.length) {
       final oldService = services[index];
@@ -398,17 +405,17 @@ class SessionProvider extends ChangeNotifier {
         await NotificationService().cancelNotification(oldServiceId);
       }
     }
-    
+
     await _service.updateService(activeSessionId!, index, updatedService);
     await refreshSession();
-    
+
     // Schedule new notification for updated service (PS4, PS5, Theatre, Simulator, VR)
     await _scheduleNotificationForService(updatedService, activeSessionId!);
   }
 
   Future<void> deleteService(int index) async {
     if (activeSessionId == null) return;
-    
+
     // Cancel notification for the deleted service
     if (index < services.length) {
       final service = services[index];
@@ -417,7 +424,7 @@ class SessionProvider extends ChangeNotifier {
         await NotificationService().cancelNotification(serviceId);
       }
     }
-    
+
     await _service.deleteService(activeSessionId!, index);
     await refreshSession();
   }
@@ -436,7 +443,7 @@ class SessionProvider extends ChangeNotifier {
 
   Future<void> closeSession() async {
     if (activeSessionId == null) return;
-    
+
     // Cancel all notifications for all services in this session BEFORE closing
     for (var service in services) {
       final serviceId = service['id'] as String?;
@@ -444,7 +451,7 @@ class SessionProvider extends ChangeNotifier {
         await NotificationService().cancelNotification(serviceId);
       }
     }
-    
+
     // Get the final amount (with discount if applied)
     final doc = await _service.sessionsRef().doc(activeSessionId!).get();
     double finalTotal = currentTotal;
@@ -454,38 +461,39 @@ class SessionProvider extends ChangeNotifier {
       finalTotal = (data?['finalAmount'] ?? data?['totalAmount'] ?? currentTotal).toDouble();
       bookingId = data?['bookingId'] as String?;
     }
-    
+
     await _service.closeSession(activeSessionId!, finalTotal);
-    
+
     // IMPORTANT: If this session was converted from a booking and ends early,
     // delete the booking_history entry to free up the booking time slots
     // The closed session will use actual endTime, so slots after endTime will be available
     if (bookingId != null && bookingId.isNotEmpty) {
       try {
         final firestore = FirebaseFirestore.instance;
-        final bookingHistoryDoc = await firestore
-            .collection('booking_history')
-            .doc(bookingId)
-            .get();
-        
+        final bookingHistoryDoc =
+            await firestore.collection('booking_history').doc(bookingId).get();
+
         if (bookingHistoryDoc.exists) {
           final bookingData = bookingHistoryDoc.data();
           final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
           final serviceType = bookingData?['serviceType'] as String? ?? '';
-          
+
           // Only delete if status is 'converted_to_session'
           // This ensures slots are freed up when session ends early
           if (status == 'converted_to_session') {
             await firestore.collection('booking_history').doc(bookingId).delete();
-            debugPrint('✅ Deleted booking_history entry for early-ended session (bookingId: $bookingId)');
-            
+            debugPrint(
+              '✅ Deleted booking_history entry for early-ended session (bookingId: $bookingId)',
+            );
+
             // Also delete from theatre_bookings if this is a Theatre booking
             if (serviceType == 'Theatre') {
-              final theatreBookingsQuery = await firestore
-                  .collection('theatre_bookings')
-                  .where('bookingId', isEqualTo: bookingId)
-                  .get();
-              
+              final theatreBookingsQuery =
+                  await firestore
+                      .collection('theatre_bookings')
+                      .where('bookingId', isEqualTo: bookingId)
+                      .get();
+
               for (var theatreDoc in theatreBookingsQuery.docs) {
                 await theatreDoc.reference.delete();
               }
@@ -498,11 +506,11 @@ class SessionProvider extends ChangeNotifier {
         // Don't throw - session is already closed, just log the error
       }
     }
-    
+
     // Clear slot availability cache when session is closed
     // This ensures slots are immediately freed up for new bookings
     DeviceCapacityService.clearCapacityCache();
-    
+
     activeSessionId = null;
     currentTotal = 0;
     services = [];
@@ -519,7 +527,7 @@ class SessionProvider extends ChangeNotifier {
         }
       }
     }
-    
+
     // IMPORTANT: Get bookingId before deleting session
     // If session was converted from a booking, we need to delete the booking_history entry
     // to free up the booking time slots
@@ -533,37 +541,36 @@ class SessionProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error getting bookingId from session: $e');
     }
-    
+
     await _service.deleteActiveSession(sessionId);
-    
+
     // If this session was converted from a booking, delete the booking_history entry
     // This frees up the booking time slots
     if (bookingId != null && bookingId.isNotEmpty) {
       try {
         final firestore = FirebaseFirestore.instance;
-        final bookingHistoryDoc = await firestore
-            .collection('booking_history')
-            .doc(bookingId)
-            .get();
-        
+        final bookingHistoryDoc =
+            await firestore.collection('booking_history').doc(bookingId).get();
+
         if (bookingHistoryDoc.exists) {
           final bookingData = bookingHistoryDoc.data();
           final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
           final serviceType = bookingData?['serviceType'] as String? ?? '';
-          
+
           // Only delete if status is 'converted_to_session'
           // This ensures we only delete bookings that were converted to this session
           if (status == 'converted_to_session') {
             await firestore.collection('booking_history').doc(bookingId).delete();
             debugPrint('✅ Deleted booking_history entry for bookingId: $bookingId');
-            
+
             // Also delete from theatre_bookings if this is a Theatre booking
             if (serviceType == 'Theatre') {
-              final theatreBookingsQuery = await firestore
-                  .collection('theatre_bookings')
-                  .where('bookingId', isEqualTo: bookingId)
-                  .get();
-              
+              final theatreBookingsQuery =
+                  await firestore
+                      .collection('theatre_bookings')
+                      .where('bookingId', isEqualTo: bookingId)
+                      .get();
+
               for (var theatreDoc in theatreBookingsQuery.docs) {
                 await theatreDoc.reference.delete();
               }
@@ -576,11 +583,11 @@ class SessionProvider extends ChangeNotifier {
         // Don't throw - session is already deleted, just log the error
       }
     }
-    
+
     // Clear slot availability cache when session is deleted
     // This ensures slots are immediately freed up for new bookings
     DeviceCapacityService.clearCapacityCache();
-    
+
     // If the deleted session was the active one, clear it
     if (activeSessionId == sessionId) {
       activeSessionId = null;
