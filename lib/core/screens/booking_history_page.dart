@@ -424,6 +424,13 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                  onPressed: () => _deleteBooking(doc.id, customerName, serviceType),
+                                  tooltip: 'Delete Booking',
+                                  iconSize: 22,
+                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
@@ -548,5 +555,86 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
       debugPrint('Error formatting time: $e');
     }
     return time24Hour;
+  }
+
+  Future<void> _deleteBooking(String bookingId, String customerName, String serviceType) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Booking'),
+        content: Text(
+          'Are you sure you want to delete this booking?\n\n'
+          'Customer: $customerName\n'
+          'Service: $serviceType\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Show loading indicator
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        // Delete the booking from Firestore
+        await _firestore.collection('all_bookings_history').doc(bookingId).delete();
+
+        // Close loading indicator
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Booking deleted successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Error deleting booking: $e');
+        
+        // Close loading indicator if still open
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting booking: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
   }
 }
