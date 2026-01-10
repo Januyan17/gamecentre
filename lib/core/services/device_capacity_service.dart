@@ -227,10 +227,12 @@ class DeviceCapacityService {
           
           if (bookingTimeSlot.isNotEmpty && bookingDate == date) {
             // This session was converted from a booking - block original booking time slots
+            // CRITICAL: Only block if the booking's service type matches the device type being checked
             try {
-              // Try to get duration from booking history
+              // Try to get duration and service type from booking history
               final bookingId = sessionData['bookingId'] as String?;
               double bookingDurationHours = 1.0; // Default
+              String? bookingServiceType;
               
               if (bookingId != null) {
                 try {
@@ -241,46 +243,54 @@ class DeviceCapacityService {
                   if (bookingDoc.exists) {
                     final bookingData = bookingDoc.data();
                     bookingDurationHours = (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
+                    bookingServiceType = bookingData?['serviceType'] as String?;
                   }
                 } catch (e) {
-                  debugPrint('Error getting booking duration: $e');
+                  debugPrint('Error getting booking details: $e');
                 }
               }
 
-              // Parse booking time slot
-              final bookingTimeParts = bookingTimeSlot.split(':');
-              if (bookingTimeParts.length == 2) {
-                final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
-                final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
-                final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
-                final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
+              // CRITICAL: Only block slots if the booking's service type matches the device type
+              // This ensures Theatre bookings don't block PS5/PS4/VR/Simulator slots and vice versa
+              if (bookingServiceType != null && bookingServiceType.trim() != deviceType.trim()) {
+                // Skip this booking - different service type, don't block slots
+                // Continue to next iteration to check other services in the session
+              } else {
+                // Parse booking time slot
+                final bookingTimeParts = bookingTimeSlot.split(':');
+                if (bookingTimeParts.length == 2) {
+                  final bookingStartHour = int.tryParse(bookingTimeParts[0]) ?? 0;
+                  final bookingStartMinute = int.tryParse(bookingTimeParts[1]) ?? 0;
+                  final bookingStartDecimal = bookingStartHour + (bookingStartMinute / 60.0);
+                  final bookingEndDecimal = bookingStartDecimal + bookingDurationHours;
 
-                // Check for overlap with original booking time slots
-                final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
-                if (hasOverlap) {
-                  // Get slot count from booking history based on service type
-                  int slotCount = 1;
-                  if (bookingId != null) {
-                    try {
-                      final bookingDoc = await _firestore
-                          .collection('booking_history')
-                          .doc(bookingId)
-                          .get();
-                      if (bookingDoc.exists) {
-                        final bookingData = bookingDoc.data();
-                        if (deviceType == 'PS4' || deviceType == 'PS5') {
-                          slotCount = (bookingData?['consoleCount'] as num?)?.toInt() ?? 1;
-                        } else if (deviceType == 'Theatre') {
-                          slotCount = (bookingData?['totalPeople'] as num?)?.toInt() ?? 1;
-                        } else if (deviceType == 'VR' || deviceType == 'Simulator') {
-                          slotCount = 1; // VR/Simulator always count as 1 slot
+                  // Check for overlap with original booking time slots
+                  final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
+                  if (hasOverlap) {
+                    // Get slot count from booking history based on service type
+                    int slotCount = 1;
+                    if (bookingId != null) {
+                      try {
+                        final bookingDoc = await _firestore
+                            .collection('booking_history')
+                            .doc(bookingId)
+                            .get();
+                        if (bookingDoc.exists) {
+                          final bookingData = bookingDoc.data();
+                          if (deviceType == 'PS4' || deviceType == 'PS5') {
+                            slotCount = (bookingData?['consoleCount'] as num?)?.toInt() ?? 1;
+                          } else if (deviceType == 'Theatre') {
+                            slotCount = (bookingData?['totalPeople'] as num?)?.toInt() ?? 1;
+                          } else if (deviceType == 'VR' || deviceType == 'Simulator') {
+                            slotCount = 1; // VR/Simulator always count as 1 slot
+                          }
                         }
+                      } catch (e) {
+                        debugPrint('Error getting slot count from booking: $e');
                       }
-                    } catch (e) {
-                      debugPrint('Error getting slot count from booking: $e');
                     }
+                    occupiedCount += slotCount;
                   }
-                  occupiedCount += slotCount;
                 }
               }
             } catch (e) {
