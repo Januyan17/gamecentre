@@ -14,6 +14,8 @@ class SessionDetailPage extends StatefulWidget {
 }
 
 class _SessionDetailPageState extends State<SessionDetailPage> {
+  bool _isClosingSession = false;
+
   @override
   void initState() {
     super.initState();
@@ -690,8 +692,9 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                disabledBackgroundColor: Colors.red.shade300,
               ),
-              onPressed: () async {
+              onPressed: _isClosingSession ? null : () async {
                 // Get final amount for confirmation dialog
                 double finalAmount = provider.currentTotal;
                 double discount = 0.0;
@@ -754,19 +757,59 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                 );
 
                 if (confirm == true && mounted) {
-                  await provider.closeSession();
-                  if (mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Session ended and added to history')),
-                    );
+                  setState(() {
+                    _isClosingSession = true;
+                  });
+
+                  try {
+                    await provider.closeSession();
+                    if (mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Session ended and added to history')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error ending session: ${e.toString()}'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  } finally {
+                    if (mounted) {
+                      setState(() {
+                        _isClosingSession = false;
+                      });
+                    }
                   }
                 }
               },
-              child: const Text(
-                'END SESSION',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
+              child: _isClosingSession
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'Ending Session...',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    )
+                  : const Text(
+                      'END SESSION',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
             ),
           ),
         ],

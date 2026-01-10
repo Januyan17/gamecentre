@@ -138,10 +138,19 @@ class DeviceCapacityService {
         
         // Only count if there's actual overlap (they share time)
         if (hasOverlap) {
-          // For PS4/PS5, count the consoleCount (number of consoles booked)
-          // For other services, count as 1
-          final consoleCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
-          occupiedCount += consoleCount;
+          // Count based on service type
+          int slotCount = 1;
+          if (deviceType == 'PS4' || deviceType == 'PS5') {
+            // For PS4/PS5, count the consoleCount (number of consoles booked)
+            slotCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
+          } else if (deviceType == 'Theatre') {
+            // For Theatre, count the totalPeople (number of people booked)
+            slotCount = (data['totalPeople'] as num?)?.toInt() ?? 1;
+          } else if (deviceType == 'VR' || deviceType == 'Simulator') {
+            // For VR/Simulator, count as 1 slot (multiple people can use same slot)
+            slotCount = 1;
+          }
+          occupiedCount += slotCount;
         }
       }
 
@@ -179,10 +188,19 @@ class DeviceCapacityService {
             final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
             
             if (hasOverlap) {
-              // For PS4/PS5, count the consoleCount (number of consoles booked)
-              // For other services, count as 1
-              final consoleCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
-              occupiedCount += consoleCount;
+              // Count based on service type
+              int slotCount = 1;
+              if (deviceType == 'PS4' || deviceType == 'PS5') {
+                // For PS4/PS5, count the consoleCount (number of consoles booked)
+                slotCount = (data['consoleCount'] as num?)?.toInt() ?? 1;
+              } else if (deviceType == 'Theatre') {
+                // For Theatre, count the totalPeople (number of people booked)
+                slotCount = (data['totalPeople'] as num?)?.toInt() ?? 1;
+              } else if (deviceType == 'VR' || deviceType == 'Simulator') {
+                // For VR/Simulator, count as 1 slot (multiple people can use same slot)
+                slotCount = 1;
+              }
+              occupiedCount += slotCount;
             }
           }
         } catch (e) {
@@ -240,9 +258,8 @@ class DeviceCapacityService {
                 // Check for overlap with original booking time slots
                 final hasOverlap = (startDecimal < bookingEndDecimal && endDecimal > bookingStartDecimal);
                 if (hasOverlap) {
-                  // For converted bookings, count as 1 (or consoleCount if available)
-                  // We need to get consoleCount from booking history if available
-                  int consoleCount = 1;
+                  // Get slot count from booking history based on service type
+                  int slotCount = 1;
                   if (bookingId != null) {
                     try {
                       final bookingDoc = await _firestore
@@ -251,13 +268,19 @@ class DeviceCapacityService {
                           .get();
                       if (bookingDoc.exists) {
                         final bookingData = bookingDoc.data();
-                        consoleCount = (bookingData?['consoleCount'] as num?)?.toInt() ?? 1;
+                        if (deviceType == 'PS4' || deviceType == 'PS5') {
+                          slotCount = (bookingData?['consoleCount'] as num?)?.toInt() ?? 1;
+                        } else if (deviceType == 'Theatre') {
+                          slotCount = (bookingData?['totalPeople'] as num?)?.toInt() ?? 1;
+                        } else if (deviceType == 'VR' || deviceType == 'Simulator') {
+                          slotCount = 1; // VR/Simulator always count as 1 slot
+                        }
                       }
                     } catch (e) {
-                      debugPrint('Error getting console count: $e');
+                      debugPrint('Error getting slot count from booking: $e');
                     }
                   }
-                  occupiedCount += consoleCount;
+                  occupiedCount += slotCount;
                 }
               }
             } catch (e) {

@@ -233,11 +233,53 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         }
       }
 
-      // Check if date is in the past
+      // Check if date is in the past (needed for converted bookings check)
       final todayId = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final isPastDate = dateId.compareTo(todayId) < 0;
 
+      // IMPORTANT: Also check booking_history for converted bookings (for today/future dates)
+      // When a booking is converted to active session, it's moved to booking_history with status 'converted_to_session'
+      // We need to block the original booking time slots even after conversion
+      if (!isPastDate) {
+        try {
+          final convertedBookingsSnapshot = await _firestore
+              .collection('booking_history')
+              .where('date', isEqualTo: dateId)
+              .where('serviceType', isEqualTo: _selectedServiceType)
+              .where('status', isEqualTo: 'converted_to_session')
+              .get();
+
+          for (var doc in convertedBookingsSnapshot.docs) {
+            final data = doc.data();
+            final timeSlot = data['timeSlot'] as String? ?? '';
+            final durationHours = (data['durationHours'] as num?)?.toDouble() ?? 1.0;
+            if (timeSlot.isEmpty) continue;
+
+            // Parse time slot and calculate all affected slots
+            final parts = timeSlot.split(':');
+            if (parts.length == 2) {
+              final startHour = int.tryParse(parts[0]) ?? 0;
+              final startMinute = int.tryParse(parts[1]) ?? 0;
+              final startDecimal = startHour + (startMinute / 60.0);
+              final endDecimal = startDecimal + durationHours;
+
+              // Mark all affected time slots (block original booking time slots)
+              for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                final slotHour = hour.floor();
+                final slotMinute = ((hour - slotHour) * 60).round();
+                final slotStr =
+                    '${slotHour.toString().padLeft(2, '0')}:${slotMinute.toString().padLeft(2, '0')}';
+                bookedSlots.add(slotStr);
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking converted bookings: $e');
+        }
+      }
+
       // Check active sessions (for today/future dates)
+      // Note: isPastDate is already declared above
       if (!isPastDate) {
         final activeSessionsSnapshot =
             await _firestore
@@ -249,6 +291,56 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
           final sessionData = sessionDoc.data();
           final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
 
+          // IMPORTANT: Check if this session has a bookingTimeSlot (converted from booking)
+          // If yes, block the original booking time slots, not just the actual session start time
+          final bookingTimeSlot = sessionData['bookingTimeSlot'] as String? ?? '';
+          final bookingDate = sessionData['bookingDate'] as String? ?? '';
+          
+          if (bookingTimeSlot.isNotEmpty && bookingDate == dateId) {
+            // This session was converted from a booking - block original booking time slots
+            try {
+              // Try to get duration from booking history
+              final bookingId = sessionData['bookingId'] as String?;
+              double bookingDurationHours = 1.0; // Default
+              
+              if (bookingId != null) {
+                try {
+                  final bookingDoc = await _firestore
+                      .collection('booking_history')
+                      .doc(bookingId)
+                      .get();
+                  if (bookingDoc.exists) {
+                    final bookingData = bookingDoc.data();
+                    bookingDurationHours = (bookingData?['durationHours'] as num?)?.toDouble() ?? 1.0;
+                  }
+                } catch (e) {
+                  debugPrint('Error getting booking duration: $e');
+                }
+              }
+
+              // Parse booking time slot and block all affected slots
+              final parts = bookingTimeSlot.split(':');
+              if (parts.length == 2) {
+                final startHour = int.tryParse(parts[0]) ?? 0;
+                final startMinute = int.tryParse(parts[1]) ?? 0;
+                final startDecimal = startHour + (startMinute / 60.0);
+                final endDecimal = startDecimal + bookingDurationHours;
+
+                // Mark all affected time slots from original booking
+                for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                  final slotHour = hour.floor();
+                  final slotMinute = ((hour - slotHour) * 60).round();
+                  final slotStr =
+                      '${slotHour.toString().padLeft(2, '0')}:${slotMinute.toString().padLeft(2, '0')}';
+                  bookedSlots.add(slotStr);
+                }
+              }
+            } catch (e) {
+              debugPrint('Error processing booking time slot: $e');
+            }
+          }
+
+          // Also block slots based on actual service start time (for sessions not from bookings)
           for (var service in services) {
             final serviceType = service['type'] as String? ?? '';
             if (serviceType != _selectedServiceType) continue;
@@ -285,7 +377,8 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
         }
 
         // Also check closed sessions for today's date
-        // This ensures completed sessions today remain marked as unavailable
+        // IMPORTANT: For closed sessions, use actual endTime if available
+        // This ensures slots are freed up when sessions end early
         try {
           if (dateId == todayId) {
             final historySessionsSnapshot =
@@ -299,6 +392,13 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
             for (var sessionDoc in historySessionsSnapshot.docs) {
               final sessionData = sessionDoc.data();
               final services = List<Map<String, dynamic>>.from(sessionData['services'] ?? []);
+              
+              // Get actual session end time if available
+              final sessionEndTime = sessionData['endTime'] as Timestamp?;
+              DateTime? actualEndTime;
+              if (sessionEndTime != null) {
+                actualEndTime = sessionEndTime.toDate();
+              }
 
               for (var service in services) {
                 final serviceType = service['type'] as String? ?? '';
@@ -314,15 +414,34 @@ class _CreateBookingPageState extends State<CreateBookingPage> {
                   // Only check for the same date
                   if (serviceDateId != dateId) continue;
 
-                  final hours = (service['hours'] as num?)?.toInt() ?? 0;
-                  final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
-                  final durationHours = hours + (minutes / 60.0);
+                  // Use actual end time if session ended early, otherwise use scheduled duration
+                  double serviceEndDecimal;
+                  if (actualEndTime != null && actualEndTime.isBefore(startTime.add(Duration(hours: 24)))) {
+                    // Session ended early - use actual end time
+                    serviceEndDecimal = actualEndTime.hour + (actualEndTime.minute / 60.0);
+                    // If end time is on a different day, use the scheduled end time instead
+                    final endDateId = DateFormat('yyyy-MM-dd').format(actualEndTime);
+                    if (endDateId != dateId) {
+                      // End time is on different date, use scheduled duration
+                      final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                      final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                      final serviceDurationHours = hours + (minutes / 60.0);
+                      final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                      serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                    }
+                  } else {
+                    // Use scheduled duration (session completed full duration or no end time recorded)
+                    final hours = (service['hours'] as num?)?.toInt() ?? 0;
+                    final minutes = (service['minutes'] as num?)?.toInt() ?? 0;
+                    final serviceDurationHours = hours + (minutes / 60.0);
+                    final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
+                    serviceEndDecimal = serviceStartDecimal + serviceDurationHours;
+                  }
 
-                  final startDecimal = startTime.hour + (startTime.minute / 60.0);
-                  final endDecimal = startDecimal + durationHours;
+                  final serviceStartDecimal = startTime.hour + (startTime.minute / 60.0);
 
-                  // Mark all affected time slots
-                  for (double hour = startDecimal; hour < endDecimal; hour += 0.5) {
+                  // Mark all affected time slots (only up to actual end time if session ended early)
+                  for (double hour = serviceStartDecimal; hour < serviceEndDecimal; hour += 0.5) {
                     final slotHour = hour.floor();
                     final slotMinute = ((hour - slotHour) * 60).round();
                     final slotStr =
