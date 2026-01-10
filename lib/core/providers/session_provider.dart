@@ -448,12 +448,42 @@ class SessionProvider extends ChangeNotifier {
     // Get the final amount (with discount if applied)
     final doc = await _service.sessionsRef().doc(activeSessionId!).get();
     double finalTotal = currentTotal;
+    String? bookingId;
     if (doc.exists) {
       final data = doc.data() as Map<String, dynamic>?;
       finalTotal = (data?['finalAmount'] ?? data?['totalAmount'] ?? currentTotal).toDouble();
+      bookingId = data?['bookingId'] as String?;
     }
     
     await _service.closeSession(activeSessionId!, finalTotal);
+    
+    // IMPORTANT: If this session was converted from a booking and ends early,
+    // delete the booking_history entry to free up the booking time slots
+    // The closed session will use actual endTime, so slots after endTime will be available
+    if (bookingId != null && bookingId.isNotEmpty) {
+      try {
+        final firestore = FirebaseFirestore.instance;
+        final bookingHistoryDoc = await firestore
+            .collection('booking_history')
+            .doc(bookingId)
+            .get();
+        
+        if (bookingHistoryDoc.exists) {
+          final bookingData = bookingHistoryDoc.data();
+          final status = (bookingData?['status'] as String? ?? '').toLowerCase().trim();
+          
+          // Only delete if status is 'converted_to_session'
+          // This ensures slots are freed up when session ends early
+          if (status == 'converted_to_session') {
+            await firestore.collection('booking_history').doc(bookingId).delete();
+            debugPrint('✅ Deleted booking_history entry for early-ended session (bookingId: $bookingId)');
+          }
+        }
+      } catch (e) {
+        debugPrint('Error deleting booking_history entry for early-ended session: $e');
+        // Don't throw - session is already closed, just log the error
+      }
+    }
     
     // Clear slot availability cache when session is closed
     // This ensures slots are immediately freed up for new bookings
