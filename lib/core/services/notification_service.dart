@@ -120,6 +120,7 @@ Future<void> _checkAndShowNotification(
       }
     } else if (!checkFailed && (sessionDoc == null || !sessionDoc.exists)) {
       // Session not in active_sessions, check if it's in closed sessions
+      // If not found in either, it's likely deleted - don't show notification
       try {
         // Try to find session in closed sessions (check today's date)
         final today = DateTime.now();
@@ -156,11 +157,17 @@ Future<void> _checkAndShowNotification(
             debugPrint(
               'ℹ️ Session $sessionId is in closed sessions (yesterday). Not showing notification.',
             );
+          } else {
+            // Session not found in active_sessions or closed sessions - likely deleted
+            debugPrint(
+              'ℹ️ Session $sessionId not found in active or closed sessions (likely deleted). Not showing notification.',
+            );
+            // sessionIsActive remains false, which will cause early return below
           }
         }
       } catch (e) {
         debugPrint('⚠️ Could not check closed sessions: $e');
-        // If we can't check closed sessions, assume session might be closed
+        // If we can't check closed sessions, assume session might be closed/deleted
         // Don't show notification to be safe
         debugPrint(
           'ℹ️ Cannot verify session status. Not showing notification to avoid false alerts.',
@@ -169,13 +176,17 @@ Future<void> _checkAndShowNotification(
       }
     }
 
-    // If session is closed, don't show notification
+    // CRITICAL: Only show notifications for active sessions
+    // If session is closed, deleted, or status cannot be verified, don't show notification
     if (sessionIsClosed) {
+      debugPrint(
+        'ℹ️ Session $sessionId is closed. Not showing notification.',
+      );
       return;
     }
 
     // If Firestore check failed and we couldn't verify session status, don't show notification
-    // This prevents false notifications for closed sessions
+    // This prevents false notifications for closed/deleted sessions
     if (checkFailed && !sessionIsActive) {
       debugPrint(
         'ℹ️ Cannot verify session status due to Firestore error. Not showing notification to avoid false alerts.',
@@ -184,9 +195,10 @@ Future<void> _checkAndShowNotification(
     }
 
     // Only proceed if session is confirmed active
+    // If session is not found in active_sessions and not in closed sessions, it's likely deleted
     if (!sessionIsActive) {
       debugPrint(
-        'ℹ️ Session $sessionId is not active. Not showing notification.',
+        'ℹ️ Session $sessionId is not active (may be deleted or closed). Not showing notification.',
       );
       return;
     }
@@ -242,22 +254,18 @@ Future<void> _checkAndShowNotification(
     // Session is still active and service exists, show notification
     final title = params['title'] as String? ?? 'Time Up';
     final body = params['body'] as String? ?? 'Service time completed';
-    debugPrint('✅ Showing notification: $title - $body');
+    debugPrint('✅ Session is active. Showing notification: $title - $body');
     await _showNotificationFromCallback(id, title, body);
   } catch (e, stackTrace) {
     debugPrint('❌ Error checking session status: $e');
     debugPrint('Stack trace: $stackTrace');
-    // On error, show notification anyway to ensure user is notified
-    try {
-      final title = params['title'] as String? ?? 'Time Up';
-      final body = params['body'] as String? ?? 'Service time completed';
-      debugPrint(
-        '⚠️ Showing notification despite error to ensure user is notified',
-      );
-      await _showNotificationFromCallback(id, title, body);
-    } catch (e2) {
-      debugPrint('❌ Failed to show notification even after error: $e2');
-    }
+    // CRITICAL: Do NOT show notification on error
+    // If we can't verify the session is active, it might be closed/deleted
+    // Only show notifications for confirmed active sessions
+    debugPrint(
+      '⚠️ Cannot verify session status due to error. Not showing notification to avoid false alerts for closed/deleted sessions.',
+    );
+    return;
   }
 }
 
