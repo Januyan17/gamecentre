@@ -60,18 +60,76 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
   }
 
   void _deleteService(int index) {
+    // Store the page context before showing dialog
+    final pageContext = context;
+    final navigator = Navigator.of(pageContext);
+    final scaffoldMessenger = ScaffoldMessenger.of(pageContext);
+
     showDialog(
-      context: context,
+      context: pageContext,
       builder:
-          (context) => AlertDialog(
+          (dialogContext) => AlertDialog(
             title: const Text('Delete Service'),
             content: const Text('Are you sure you want to delete this service?'),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
               TextButton(
                 onPressed: () async {
-                  await context.read<SessionProvider>().deleteService(index);
-                  if (mounted) Navigator.pop(context);
+                  // Close the confirmation dialog first
+                  Navigator.pop(dialogContext);
+
+                  // Show loading indicator using page context
+                  if (mounted) {
+                    showDialog(
+                      context: pageContext,
+                      barrierDismissible: false,
+                      builder:
+                          (loadingContext) => PopScope(
+                            canPop: false,
+                            child: const Center(child: CircularProgressIndicator()),
+                          ),
+                    );
+                  }
+
+                  try {
+                    // Perform the delete operation
+                    await pageContext.read<SessionProvider>().deleteService(index);
+
+                    // Close loading dialog using page context
+                    if (mounted && navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Show success message
+                    if (mounted) {
+                      scaffoldMessenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Service deleted successfully'),
+                          backgroundColor: Colors.green,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    // Close loading dialog using page context
+                    if (mounted && navigator.canPop()) {
+                      navigator.pop();
+                    }
+
+                    // Show error message
+                    if (mounted) {
+                      scaffoldMessenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Error deleting service: ${e.toString()}'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  }
                 },
                 child: const Text('Delete', style: TextStyle(color: Colors.red)),
               ),
@@ -694,122 +752,133 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 disabledBackgroundColor: Colors.red.shade300,
               ),
-              onPressed: _isClosingSession ? null : () async {
-                // Get final amount for confirmation dialog
-                double finalAmount = provider.currentTotal;
-                double discount = 0.0;
-                final sessionDoc = await provider.sessionsRef().doc(provider.activeSessionId).get();
-                if (sessionDoc.exists) {
-                  final data = sessionDoc.data() as Map<String, dynamic>?;
-                  final totalAmount = (data?['totalAmount'] ?? provider.currentTotal).toDouble();
-                  // Properly handle null/undefined discount (when removed, field is deleted)
-                  final discountValue = data?['discount'];
-                  discount = discountValue != null ? (discountValue as num).toDouble() : 0.0;
-                  // finalAmount might be deleted when discount is removed, so default to totalAmount
-                  final finalAmountValue = data?['finalAmount'];
-                  finalAmount =
-                      finalAmountValue != null ? (finalAmountValue as num).toDouble() : totalAmount;
-                }
+              onPressed:
+                  _isClosingSession
+                      ? null
+                      : () async {
+                        // Get final amount for confirmation dialog
+                        double finalAmount = provider.currentTotal;
+                        double discount = 0.0;
+                        final sessionDoc =
+                            await provider.sessionsRef().doc(provider.activeSessionId).get();
+                        if (sessionDoc.exists) {
+                          final data = sessionDoc.data() as Map<String, dynamic>?;
+                          final totalAmount =
+                              (data?['totalAmount'] ?? provider.currentTotal).toDouble();
+                          // Properly handle null/undefined discount (when removed, field is deleted)
+                          final discountValue = data?['discount'];
+                          discount =
+                              discountValue != null ? (discountValue as num).toDouble() : 0.0;
+                          // finalAmount might be deleted when discount is removed, so default to totalAmount
+                          final finalAmountValue = data?['finalAmount'];
+                          finalAmount =
+                              finalAmountValue != null
+                                  ? (finalAmountValue as num).toDouble()
+                                  : totalAmount;
+                        }
 
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder:
-                      (context) => AlertDialog(
-                        title: const Text('End Session'),
-                        content: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Total Amount: Rs ${provider.currentTotal.toStringAsFixed(2)}'),
-                            if (discount > 0) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'Discount: Rs ${discount.toStringAsFixed(2)}',
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Final Amount: Rs ${finalAmount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder:
+                              (context) => AlertDialog(
+                                title: const Text('End Session'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Total Amount: Rs ${provider.currentTotal.toStringAsFixed(2)}',
+                                    ),
+                                    if (discount > 0) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Discount: Rs ${discount.toStringAsFixed(2)}',
+                                        style: const TextStyle(color: Colors.red),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Final Amount: Rs ${finalAmount.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Are you sure you want to end this session? This will add it to history.',
+                                    ),
+                                  ],
                                 ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                    child: const Text('End Session'),
+                                  ),
+                                ],
                               ),
-                            ],
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Are you sure you want to end this session? This will add it to history.',
+                        );
+
+                        if (confirm == true && mounted) {
+                          setState(() {
+                            _isClosingSession = true;
+                          });
+
+                          try {
+                            await provider.closeSession();
+                            if (mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Session ended and added to history')),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error ending session: ${e.toString()}'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            if (mounted) {
+                              setState(() {
+                                _isClosingSession = false;
+                              });
+                            }
+                          }
+                        }
+                      },
+              child:
+                  _isClosingSession
+                      ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                             ),
-                          ],
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
                           ),
-                          ElevatedButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                            child: const Text('End Session'),
+                          SizedBox(width: 12),
+                          Text(
+                            'Ending Session...',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ],
+                      )
+                      : const Text(
+                        'END SESSION',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                );
-
-                if (confirm == true && mounted) {
-                  setState(() {
-                    _isClosingSession = true;
-                  });
-
-                  try {
-                    await provider.closeSession();
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Session ended and added to history')),
-                      );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error ending session: ${e.toString()}'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  } finally {
-                    if (mounted) {
-                      setState(() {
-                        _isClosingSession = false;
-                      });
-                    }
-                  }
-                }
-              },
-              child: _isClosingSession
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          'Ending Session...',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    )
-                  : const Text(
-                      'END SESSION',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
             ),
           ),
         ],

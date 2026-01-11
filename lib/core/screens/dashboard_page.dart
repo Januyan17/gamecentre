@@ -133,30 +133,19 @@ class _DashboardPageState extends State<DashboardPage> {
             endTime = startTime.add(Duration(minutes: duration));
           }
 
-          // Check if time is up (within last 30 seconds to avoid duplicate notifications)
+          // NOTE: Notifications are now handled by Android Alarm Manager (alarmCallback)
+          // The dashboard check is disabled to prevent duplicate notifications
+          // The alarm manager is more reliable and handles notifications in background
+          // 
+          // We still check service times here for other purposes (UI updates, etc.)
+          // but we don't show notifications to avoid duplicates with the alarm callback
           if (endTime != null) {
             final timeDiff = now.difference(endTime);
             if (timeDiff.inSeconds >= 0 && timeDiff.inSeconds <= 30) {
-              // Time is up! Check if we've already notified for this service
+              // Service time is up - alarm manager will handle the notification
+              // This check can be used for other purposes (UI indicators, etc.)
               final serviceId = service['id'] as String? ?? '';
-              // Include sessionId in key to make it unique per session
-              final notificationKey = 'time_up_${sessionId}_${serviceId}';
-
-              // Check if we've already notified for this service (atomic check)
-              final alreadyNotified = prefs.getBool(notificationKey) ?? false;
-              if (!alreadyNotified) {
-                // Mark as notified FIRST to prevent race conditions
-                await prefs.setBool(notificationKey, true);
-                
-                // Then show notification
-                await NotificationService().showImmediateNotification(
-                  title: 'Time Up: $serviceType',
-                  body: '$serviceType session for $customerName has completed',
-                  serviceType: serviceType,
-                );
-
-                debugPrint('🔔 Time-up notification shown for $serviceType (Session: $sessionId)');
-              }
+              debugPrint('ℹ️ Service $serviceType (ID: $serviceId) time is up - notification handled by alarm manager');
             }
           }
         }

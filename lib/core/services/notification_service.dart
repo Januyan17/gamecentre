@@ -5,38 +5,64 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 /// Top-level callback for Android Alarm Manager (MUST be outside class)
 @pragma('vm:entry-point')
 void alarmCallback(int id, Map<String, dynamic> params) {
+  debugPrint('🔔 alarmCallback called with ID: $id');
+  debugPrint('🔔 Params: $params');
   // Check if session is still active before showing notification
-  _checkAndShowNotification(id, params);
+  // Use runZonedGuarded to ensure async errors are caught
+  _checkAndShowNotification(id, params).catchError((error, stackTrace) {
+    debugPrint('❌ Error in alarmCallback: $error');
+    debugPrint('Stack trace: $stackTrace');
+  });
 }
 
 /// Check if session is still active and show notification only if active
 @pragma('vm:entry-point')
-Future<void> _checkAndShowNotification(
-  int id,
-  Map<String, dynamic> params,
-) async {
+Future<void> _checkAndShowNotification(int id, Map<String, dynamic> params) async {
   try {
+    debugPrint('🔔 _checkAndShowNotification called');
+    debugPrint('🔔 Params received: $params');
+
+    // Initialize Firebase in background isolate (if not already initialized)
+    // IMPORTANT: Firebase must be initialized in the background isolate
+    try {
+      await Firebase.initializeApp();
+      debugPrint('✅ Firebase initialized in background isolate');
+    } catch (e) {
+      // Firebase might already be initialized, which is fine
+      if (e.toString().contains('already been initialized')) {
+        debugPrint('ℹ️ Firebase already initialized in background isolate');
+      } else {
+        debugPrint('⚠️ Error initializing Firebase in background isolate: $e');
+        // Continue anyway - we'll try to use Firestore
+      }
+    }
+
     // Extract serviceId from params (we need to pass it when scheduling)
     final serviceId = params['serviceId'] as String?;
     final sessionId = params['sessionId'] as String?;
 
     if (serviceId == null || sessionId == null) {
       debugPrint('⚠️ Notification callback: Missing serviceId or sessionId');
+      debugPrint('   serviceId: $serviceId');
+      debugPrint('   sessionId: $sessionId');
       return;
     }
 
     debugPrint('🔔 Alarm fired for service: $serviceId, session: $sessionId');
 
-    // Initialize Firestore in background isolate
+    // Get Firestore instance (Firebase should now be initialized)
     final firestore = FirebaseFirestore.instance;
+    debugPrint('✅ Firestore instance obtained');
 
     // Get service type from params to check notification toggle first
     final serviceType = params['serviceType'] as String? ?? '';
-    
+
     // Check notification toggle setting FIRST (before checking session status)
     bool notificationsEnabled = true;
     try {
@@ -70,214 +96,227 @@ Future<void> _checkAndShowNotification(
         }
       }
     } catch (e) {
-      debugPrint(
-        '⚠️ Could not check notification setting, defaulting to enabled: $e',
-      );
+      debugPrint('⚠️ Could not check notification setting, defaulting to enabled: $e');
       // Default to enabled if check fails
     }
 
     // If notifications are disabled for this service type, don't show notification
     if (!notificationsEnabled) {
-      debugPrint(
-        'ℹ️ Notifications are disabled for $serviceType. Not showing notification.',
-      );
+      debugPrint('ℹ️ Notifications are disabled for $serviceType. Not showing notification.');
       return;
     }
 
     // Check if session is still active in Firestore with timeout
+    // Use a simpler approach: if session exists in active_sessions and is not closed, show notification
     DocumentSnapshot? sessionDoc;
-    bool checkFailed = false;
+    bool sessionIsClosed = false;
+
+    debugPrint('🔍 Checking session status in Firestore...');
 
     try {
+      // Try to get session from active_sessions first
       sessionDoc = await firestore
           .collection('active_sessions')
           .doc(sessionId)
           .get()
-          .timeout(const Duration(seconds: 5));
-    } catch (e) {
-      debugPrint(
-        '⚠️ Firestore query failed: $e. Will check closed sessions before showing notification.',
-      );
-      checkFailed = true;
-    }
+          .timeout(const Duration(seconds: 10));
 
-    // If session exists in active_sessions, check its status
-    bool sessionIsActive = false;
-    bool sessionIsClosed = false;
-    
-    if (!checkFailed && sessionDoc != null && sessionDoc.exists) {
-      final sessionData = sessionDoc.data() as Map<String, dynamic>?;
-      if (sessionData != null) {
-        final status = (sessionData['status'] as String? ?? 'active').toLowerCase().trim();
-        if (status == 'closed') {
-          sessionIsClosed = true;
-          debugPrint(
-            'ℹ️ Session $sessionId is closed in active_sessions. Not showing notification.',
-          );
+      debugPrint('🔍 Firestore query completed. Session exists: ${sessionDoc.exists}');
+
+      if (sessionDoc.exists) {
+        final sessionData = sessionDoc.data() as Map<String, dynamic>?;
+        if (sessionData != null) {
+          final status = (sessionData['status'] as String? ?? 'active').toLowerCase().trim();
+          debugPrint('🔍 Session status: $status');
+          if (status == 'closed') {
+            sessionIsClosed = true;
+            debugPrint(
+              'ℹ️ Session $sessionId is closed in active_sessions. Not showing notification.',
+            );
+          } else {
+            // Session exists and is active - proceed to show notification
+            debugPrint(
+              '✅ Session $sessionId is active in active_sessions (status: $status). Will show notification.',
+            );
+          }
         } else {
-          sessionIsActive = true;
+          // Session exists but no data - treat as active (might be a race condition)
+          debugPrint(
+            '⚠️ Session $sessionId exists but has no data. Treating as active and showing notification.',
+          );
         }
-      }
-    } else if (!checkFailed && (sessionDoc == null || !sessionDoc.exists)) {
-      // Session not in active_sessions, check if it's in closed sessions
-      // If not found in either, it's likely deleted - don't show notification
-      try {
-        // Try to find session in closed sessions (check today's date)
-        final today = DateTime.now();
-        final dateId = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
-        
-        final closedSessionDoc = await firestore
-            .collection('days')
-            .doc(dateId)
-            .collection('sessions')
-            .doc(sessionId)
-            .get()
-            .timeout(const Duration(seconds: 3));
-        
-        if (closedSessionDoc.exists) {
-          sessionIsClosed = true;
-          debugPrint(
-            'ℹ️ Session $sessionId is in closed sessions. Not showing notification.',
-          );
-        } else {
-          // Also check yesterday in case notification fires right after midnight
-          final yesterday = today.subtract(const Duration(days: 1));
-          final yesterdayId = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
-          
-          final yesterdayClosedDoc = await firestore
+      } else {
+        // Session not in active_sessions - check if it's closed
+        debugPrint(
+          '⚠️ Session $sessionId not found in active_sessions. Checking closed sessions...',
+        );
+
+        // Check closed sessions to confirm it's not closed
+        try {
+          final today = DateTime.now();
+          final dateId =
+              '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+          final closedSessionDoc = await firestore
               .collection('days')
-              .doc(yesterdayId)
+              .doc(dateId)
               .collection('sessions')
               .doc(sessionId)
               .get()
-              .timeout(const Duration(seconds: 3));
-          
-          if (yesterdayClosedDoc.exists) {
+              .timeout(const Duration(seconds: 5));
+
+          if (closedSessionDoc.exists) {
             sessionIsClosed = true;
-            debugPrint(
-              'ℹ️ Session $sessionId is in closed sessions (yesterday). Not showing notification.',
-            );
+            debugPrint('ℹ️ Session $sessionId is in closed sessions. Not showing notification.');
           } else {
-            // Session not found in active_sessions or closed sessions - likely deleted
-            debugPrint(
-              'ℹ️ Session $sessionId not found in active or closed sessions (likely deleted). Not showing notification.',
-            );
-            // sessionIsActive remains false, which will cause early return below
+            // Check yesterday too
+            final yesterday = today.subtract(const Duration(days: 1));
+            final yesterdayId =
+                '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+
+            final yesterdayClosedDoc = await firestore
+                .collection('days')
+                .doc(yesterdayId)
+                .collection('sessions')
+                .doc(sessionId)
+                .get()
+                .timeout(const Duration(seconds: 5));
+
+            if (yesterdayClosedDoc.exists) {
+              sessionIsClosed = true;
+              debugPrint(
+                'ℹ️ Session $sessionId is in closed sessions (yesterday). Not showing notification.',
+              );
+            } else {
+              // Session not found in active or closed - might be deleted
+              // But if we scheduled a notification, the session was active at that time
+              // So show the notification anyway (better to show than miss)
+              debugPrint(
+                '⚠️ Session $sessionId not found in active or closed sessions. Showing notification anyway (was active when scheduled).',
+              );
+              // Don't set sessionIsClosed = true, allow notification to show
+            }
           }
+        } catch (e) {
+          debugPrint('⚠️ Could not check closed sessions: $e');
+          // If we can't verify, show notification anyway (was active when scheduled)
+          debugPrint('⚠️ Showing notification anyway since we cannot verify status.');
         }
-      } catch (e) {
-        debugPrint('⚠️ Could not check closed sessions: $e');
-        // If we can't check closed sessions, assume session might be closed/deleted
-        // Don't show notification to be safe
-        debugPrint(
-          'ℹ️ Cannot verify session status. Not showing notification to avoid false alerts.',
-        );
-        return;
       }
+    } catch (e) {
+      debugPrint(
+        '⚠️ Firestore query failed: $e. Showing notification anyway (was active when scheduled).',
+      );
+      // On error, show notification anyway since it was scheduled for an active session
+      // This prevents missing notifications due to temporary network issues
     }
 
     // CRITICAL: Only show notifications for active sessions
-    // If session is closed, deleted, or status cannot be verified, don't show notification
+    // If session is explicitly closed, don't show notification
     if (sessionIsClosed) {
-      debugPrint(
-        'ℹ️ Session $sessionId is closed. Not showing notification.',
-      );
+      debugPrint('ℹ️ Session $sessionId is closed. Not showing notification.');
       return;
     }
 
-    // If Firestore check failed and we couldn't verify session status, don't show notification
-    // This prevents false notifications for closed/deleted sessions
-    if (checkFailed && !sessionIsActive) {
-      debugPrint(
-        'ℹ️ Cannot verify session status due to Firestore error. Not showing notification to avoid false alerts.',
-      );
-      return;
-    }
+    debugPrint('✅ Session check passed. Proceeding to show notification.');
 
-    // Only proceed if session is confirmed active
-    // If session is not found in active_sessions and not in closed sessions, it's likely deleted
-    if (!sessionIsActive) {
-      debugPrint(
-        'ℹ️ Session $sessionId is not active (may be deleted or closed). Not showing notification.',
-      );
-      return;
-    }
-
-    final sessionData = sessionDoc!.data() as Map<String, dynamic>?;
-    if (sessionData == null) {
-      debugPrint(
-        'ℹ️ Session $sessionId has no data. Not showing notification.',
-      );
-      return;
-    }
-
-    // Check if the service still exists in the session
-    final services = List<Map<String, dynamic>>.from(
-      sessionData['services'] ?? [],
-    );
-
-    // Try to find service by ID first
-    bool serviceExists = services.any((service) {
-      final sid = service['id'] as String?;
-      return sid != null && sid.isNotEmpty && sid == serviceId;
-    });
-
-    // If not found by ID, but session is active, we'll still check notification settings
-    // This handles cases where service ID might not match exactly (e.g., service was updated)
-    if (!serviceExists) {
-      debugPrint(
-        '⚠️ Service $serviceId not found by ID in session $sessionId.',
-      );
-      // Check if there are any services of the same type in the session
-      final serviceType = params['serviceType'] as String? ?? '';
-      final hasServicesOfType = services.any(
-        (s) =>
-            (s['type'] as String? ?? '').toLowerCase() ==
-            serviceType.toLowerCase(),
-      );
-
-      if (!hasServicesOfType) {
-        debugPrint(
-          'ℹ️ No services of type $serviceType found in session. Not showing notification.',
-        );
+    // Check if notification was already shown (prevent duplicates)
+    // Use the same key format as dashboard page
+    final notificationKey = 'time_up_${sessionId}_$serviceId';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final alreadyNotified = prefs.getBool(notificationKey) ?? false;
+      
+      if (alreadyNotified) {
+        debugPrint('ℹ️ Notification already shown for service $serviceId (session $sessionId). Skipping duplicate.');
         return;
       }
-
-      debugPrint(
-        '⚠️ Service ID not found, but session has $serviceType services. Will check notification setting.',
-      );
-      // Continue - notification toggle already checked above
-    } else {
-      debugPrint('✅ Service $serviceId found in session $sessionId');
+      
+      // Mark as notified FIRST to prevent race conditions
+      await prefs.setBool(notificationKey, true);
+      debugPrint('✅ Marked notification as shown in SharedPreferences');
+    } catch (e) {
+      debugPrint('⚠️ Could not check SharedPreferences for duplicate prevention: $e');
+      // Continue to show notification if SharedPreferences check fails
     }
 
-    // Session is still active and service exists, show notification
+    // Get session data (optional - we'll show notification even without it)
+    Map<String, dynamic>? sessionData;
+    if (sessionDoc != null && sessionDoc.exists) {
+      sessionData = sessionDoc.data() as Map<String, dynamic>?;
+    }
+
+    // If we don't have session data, try to fetch it one more time (optional)
+    if (sessionData == null && !sessionIsClosed) {
+      try {
+        final finalDoc = await firestore
+            .collection('active_sessions')
+            .doc(sessionId)
+            .get()
+            .timeout(const Duration(seconds: 3));
+        if (finalDoc.exists) {
+          sessionData = finalDoc.data();
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not fetch session data: $e');
+      }
+    }
+
+    // Show notification - we've already verified session is not closed
+    // Even if we don't have session data, show notification since it was scheduled for an active session
     final title = params['title'] as String? ?? 'Time Up';
     final body = params['body'] as String? ?? 'Service time completed';
-    debugPrint('✅ Session is active. Showing notification: $title - $body');
+    debugPrint('✅ Showing notification: $title - $body');
+    debugPrint('   Service ID: $serviceId');
+    debugPrint('   Session ID: $sessionId');
     await _showNotificationFromCallback(id, title, body);
+    debugPrint('✅ Notification shown successfully');
   } catch (e, stackTrace) {
     debugPrint('❌ Error checking session status: $e');
     debugPrint('Stack trace: $stackTrace');
-    // CRITICAL: Do NOT show notification on error
-    // If we can't verify the session is active, it might be closed/deleted
-    // Only show notifications for confirmed active sessions
+    // If there's an error, check for duplicates before showing notification
+    // Extract serviceId and sessionId from params again (they might not be in scope)
+    final errorServiceId = params['serviceId'] as String?;
+    final errorSessionId = params['sessionId'] as String?;
+    
+    if (errorServiceId != null && errorSessionId != null) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final notificationKey = 'time_up_${errorSessionId}_$errorServiceId';
+        final alreadyNotified = prefs.getBool(notificationKey) ?? false;
+        
+        if (alreadyNotified) {
+          debugPrint('ℹ️ Notification already shown (error case). Skipping duplicate.');
+          return;
+        }
+        
+        // Mark as notified FIRST to prevent race conditions
+        await prefs.setBool(notificationKey, true);
+      } catch (prefsError) {
+        debugPrint('⚠️ Could not check SharedPreferences in error handler: $prefsError');
+      }
+    }
+    
+    // If there's an error, show notification anyway since it was scheduled for an active session
+    // Better to show a notification than miss one
     debugPrint(
-      '⚠️ Cannot verify session status due to error. Not showing notification to avoid false alerts for closed/deleted sessions.',
+      '⚠️ Error occurred, but showing notification anyway since it was scheduled for an active session.',
     );
-    return;
+    try {
+      final title = params['title'] as String? ?? 'Time Up';
+      final body = params['body'] as String? ?? 'Service time completed';
+      await _showNotificationFromCallback(id, title, body);
+      debugPrint('✅ Notification shown despite error');
+    } catch (showError) {
+      debugPrint('❌ Failed to show notification: $showError');
+    }
   }
 }
 
 /// Show notification from callback - top-level function
 @pragma('vm:entry-point')
-Future<void> _showNotificationFromCallback(
-  int id,
-  String title,
-  String body,
-) async {
-  final FlutterLocalNotificationsPlugin notifications =
-      FlutterLocalNotificationsPlugin();
+Future<void> _showNotificationFromCallback(int id, String title, String body) async {
+  final FlutterLocalNotificationsPlugin notifications = FlutterLocalNotificationsPlugin();
 
   const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
     'service_time_up',
@@ -291,9 +330,7 @@ Future<void> _showNotificationFromCallback(
     visibility: NotificationVisibility.public,
   );
 
-  const NotificationDetails notificationDetails = NotificationDetails(
-    android: androidDetails,
-  );
+  const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
 
   try {
     await notifications.show(id, title, body, notificationDetails);
@@ -307,8 +344,7 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _notifications =
-      FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   static const platform = MethodChannel('com.company.rowzow/battery');
   static const alarmChannel = MethodChannel('com.company.rowzow/alarm');
@@ -325,15 +361,15 @@ class NotificationService {
     await AndroidAlarmManager.initialize();
 
     // Android initialization settings
-    const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
-    const DarwinInitializationSettings iosSettings =
-        DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
 
     const InitializationSettings initSettings = InitializationSettings(
       android: androidSettings,
@@ -349,9 +385,7 @@ class NotificationService {
     if (defaultTargetPlatform == TargetPlatform.android) {
       final androidImplementation =
           _notifications
-              .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin
-              >();
+              .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
       if (androidImplementation != null) {
         await androidImplementation.requestNotificationsPermission();
@@ -367,8 +401,7 @@ class NotificationService {
             const AndroidNotificationChannel(
               'service_time_up',
               'Service Time Up',
-              description:
-                  'Notifications when service time slots are completed with sound',
+              description: 'Notifications when service time slots are completed with sound',
               importance: Importance.max,
               playSound: true,
               enableVibration: true,
@@ -438,16 +471,12 @@ class NotificationService {
 
     debugPrint('📅 Scheduling notification:');
     debugPrint('   Notification ID: $notificationId');
-    debugPrint(
-      '   Delay: ${delay.inMinutes} minutes (${delay.inSeconds} seconds)',
-    );
+    debugPrint('   Delay: ${delay.inMinutes} minutes (${delay.inSeconds} seconds)');
     debugPrint('   End Time: $endTime');
     debugPrint('   Current Time: ${DateTime.now()}');
 
     if (delay.isNegative) {
-      debugPrint(
-        '⚠️ Cannot schedule notification: delay is negative (end time is in the past)',
-      );
+      debugPrint('⚠️ Cannot schedule notification: delay is negative (end time is in the past)');
       return;
     }
 
@@ -471,9 +500,7 @@ class NotificationService {
       if (scheduled) {
         debugPrint('✅ Notification scheduled successfully for $serviceType');
       } else {
-        debugPrint(
-          '❌ Failed to schedule notification (AndroidAlarmManager returned false)',
-        );
+        debugPrint('❌ Failed to schedule notification (AndroidAlarmManager returned false)');
       }
     } catch (e, stackTrace) {
       debugPrint('❌ Error scheduling alarm: $e');
@@ -507,10 +534,7 @@ class NotificationService {
     if (serviceType != null) {
       try {
         final notificationDoc =
-            await FirebaseFirestore.instance
-                .collection('settings')
-                .doc('notifications')
-                .get();
+            await FirebaseFirestore.instance.collection('settings').doc('notifications').get();
         if (notificationDoc.exists) {
           final data = notificationDoc.data();
           // Map service type to setting key (case-insensitive)
@@ -542,9 +566,7 @@ class NotificationService {
           }
         }
       } catch (e) {
-        debugPrint(
-          '⚠️ Could not check notification setting, defaulting to enabled: $e',
-        );
+        debugPrint('⚠️ Could not check notification setting, defaulting to enabled: $e');
         // Default to enabled if check fails
       }
     }
@@ -553,21 +575,17 @@ class NotificationService {
       await initialize();
     }
 
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-          'service_time_up',
-          'Service Time Up',
-          channelDescription:
-              'Notifications when service time slots are completed',
-          importance: Importance.max,
-          priority: Priority.max,
-          playSound: true,
-          enableVibration: true,
-        );
-
-    const NotificationDetails notificationDetails = NotificationDetails(
-      android: androidDetails,
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'service_time_up',
+      'Service Time Up',
+      channelDescription: 'Notifications when service time slots are completed',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
     );
+
+    const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
 
     try {
       await _notifications.show(
