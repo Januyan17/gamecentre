@@ -8,9 +8,33 @@ class AddServicePage extends StatelessWidget {
   const AddServicePage({super.key});
 
   void _add(BuildContext context, Map<String, dynamic> service) async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Adding service...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       await context.read<SessionProvider>().addService(service);
       if (context.mounted) {
+        // Close loading dialog
+        Navigator.pop(context);
+        // Navigate back to previous screen
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -22,6 +46,9 @@ class AddServicePage extends StatelessWidget {
       }
     } catch (e) {
       if (context.mounted) {
+        // Close loading dialog
+        Navigator.pop(context);
+        
         // Extract error message
         String errorMessage = 'Error adding service';
         final errorStr = e.toString();
@@ -262,8 +289,8 @@ class _VrDialogState extends State<_VrDialog> {
           onPressed: () async {
             final slotPrice = await PriceCalculator.vr();
             final totalPrice = slotPrice * _slots;
+            Navigator.pop(context); // Close dialog first
             widget.onAdd(_slots, totalPrice);
-            Navigator.pop(context);
           },
           child: const Text('Add'),
         ),
@@ -377,8 +404,8 @@ class _SimulatorDialogState extends State<_SimulatorDialog> {
           onPressed: () async {
             final gamePrice = await PriceCalculator.carSimulator();
             final totalPrice = gamePrice * _games;
+            Navigator.pop(context); // Close dialog first
             widget.onAdd(_games, totalPrice);
-            Navigator.pop(context);
           },
           child: const Text('Add'),
         ),
@@ -521,8 +548,8 @@ class _TheatreDialogState extends State<_TheatreDialog> {
               people: peopleCount.clamp(1, 10),
             );
 
+            Navigator.pop(context); // Close dialog first
             widget.onAdd(_hours, peopleCount.clamp(1, 10), finalPrice.toInt());
-            Navigator.pop(context);
           },
           child: const Text('Add'),
         ),
