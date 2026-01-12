@@ -47,9 +47,12 @@ class FinanceHistoryPage extends StatelessWidget {
               final date = (data['dateTimestamp'] as Timestamp?)?.toDate() ??
                   DateTime.parse(data['date'] ?? '');
               final income = (data['income'] ?? 0).toDouble();
+              final totalAdditionalIncome = (data['totalAdditionalIncome'] ?? 0).toDouble();
+              final totalIncome = income + totalAdditionalIncome;
               final totalExpenses = (data['totalExpenses'] ?? 0).toDouble();
               final netProfit = (data['netProfit'] ?? 0).toDouble();
               final expenses = List<Map<String, dynamic>>.from(data['expenses'] ?? []);
+              final additionalIncome = List<Map<String, dynamic>>.from(data['additionalIncome'] ?? []);
               final isSaved = data['isSaved'] ?? false;
               final autoPreserved = data['autoPreserved'] ?? false;
               
@@ -95,7 +98,7 @@ class FinanceHistoryPage extends StatelessWidget {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Income: Rs ${income.toStringAsFixed(2)}'),
+                      Text('Income: Rs ${totalIncome.toStringAsFixed(2)}'),
                       Text('Expenses: Rs ${totalExpenses.toStringAsFixed(2)}'),
                       Text(
                         'Net Profit: Rs ${netProfit.toStringAsFixed(2)}',
@@ -155,25 +158,101 @@ class FinanceHistoryPage extends StatelessWidget {
                               color: Colors.green.shade50,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Total Income:',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Income (From App):',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      'Rs ${income.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  'Rs ${income.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green,
+                                if (totalAdditionalIncome > 0) ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Additional Income:',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      Text(
+                                        'Rs ${totalAdditionalIncome.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                ],
+                                const Divider(),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Total Income:',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Rs ${totalIncome.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(height: 12),
+
+                          // Additional Income Detail
+                          if (additionalIncome.isNotEmpty) ...[
+                            const Text(
+                              'Additional Income:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ...additionalIncome.map((incomeItem) {
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                color: Colors.green.shade50,
+                                child: ListTile(
+                                  dense: true,
+                                  title: Text(incomeItem['note'] ?? 'Additional Income'),
+                                  trailing: Text(
+                                    'Rs ${(incomeItem['amount'] as num).toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                            const SizedBox(height: 12),
+                          ],
 
                           // Expenses Detail
                           if (expenses.isNotEmpty) ...[

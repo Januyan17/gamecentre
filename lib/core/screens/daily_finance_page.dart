@@ -1,6 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+
+// Custom input formatter to allow +, -, numbers, and decimal point
+class SignedDecimalTextInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    
+    // Allow empty string
+    if (text.isEmpty) {
+      return newValue;
+    }
+    
+    // Check if it matches the pattern: optional + or - at start, then numbers and decimal
+    final regex = RegExp(r'^[+\-]?\d*\.?\d*$');
+    
+    if (regex.hasMatch(text)) {
+      return newValue;
+    }
+    
+    // If it doesn't match, return old value
+    return oldValue;
+  }
+}
 
 class DailyFinancePage extends StatefulWidget {
   const DailyFinancePage({super.key});
@@ -19,7 +46,9 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
   DateTime _selectedDate = DateTime.now();
   double _dailyIncome = 0.0;
   double _totalExpenses = 0.0;
+  double _totalAdditionalIncome = 0.0;
   List<Map<String, dynamic>> _expenses = [];
+  List<Map<String, dynamic>> _additionalIncome = [];
   bool _isLoading = false;
   bool _isSaving = false;
   bool _isSaved = false;
@@ -99,11 +128,13 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
           if (autoPreserved && _dailyIncome > 0) {
             // Update income in case new sessions were closed
             final existingIncome = (data['income'] ?? 0).toDouble();
+            final existingAdditionalIncome = (data['totalAdditionalIncome'] ?? 0).toDouble();
             if (_dailyIncome > existingIncome) {
               // Income has increased, update it
+              final totalIncome = _dailyIncome + existingAdditionalIncome;
               await _firestore.collection('daily_finance').doc(dateId).update({
                 'income': _dailyIncome,
-                'netProfit': _dailyIncome - (data['totalExpenses'] ?? 0).toDouble(),
+                'netProfit': totalIncome - (data['totalExpenses'] ?? 0).toDouble(),
               });
             }
           }
@@ -149,6 +180,51 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
             0.0,
             (sum, expense) => sum + (expense['amount'] as num).toDouble(),
           );
+          
+          // Load additional income
+          final additionalIncomeList = data['additionalIncome'];
+          _additionalIncome = [];
+          
+          if (additionalIncomeList != null && additionalIncomeList is List) {
+            for (var income in additionalIncomeList) {
+              if (income is Map) {
+                final incomeMap = Map<String, dynamic>.from(income);
+                // Ensure timestamp is properly converted from Firestore
+                if (incomeMap['timestamp'] != null) {
+                  if (incomeMap['timestamp'] is Timestamp) {
+                    // Already a Timestamp, keep it
+                  } else if (incomeMap['timestamp'] is Map) {
+                    // Convert Firestore Timestamp map to Timestamp object
+                    try {
+                      final tsMap = incomeMap['timestamp'] as Map;
+                      if (tsMap.containsKey('_seconds')) {
+                        incomeMap['timestamp'] = Timestamp(
+                          tsMap['_seconds'] as int,
+                          (tsMap['_nanoseconds'] ?? 0) as int,
+                        );
+                      } else {
+                        incomeMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                      }
+                    } catch (e) {
+                      incomeMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                    }
+                  } else {
+                    // Convert to Timestamp if it's something else
+                    incomeMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                  }
+                } else {
+                  incomeMap['timestamp'] = Timestamp.fromDate(DateTime.now());
+                }
+                _additionalIncome.add(incomeMap);
+              }
+            }
+          }
+          
+          _totalAdditionalIncome = _additionalIncome.fold<double>(
+            0.0,
+            (sum, income) => sum + (income['amount'] as num).toDouble(),
+          );
+          
           _isSaved = data['isSaved'] ?? false;
           _autoPreserved = data['autoPreserved'] ?? false;
           
@@ -176,11 +252,15 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
         } else {
           _expenses = [];
           _totalExpenses = 0.0;
+          _additionalIncome = [];
+          _totalAdditionalIncome = 0.0;
           _isSaved = false;
         }
       } else {
         _expenses = [];
         _totalExpenses = 0.0;
+        _additionalIncome = [];
+        _totalAdditionalIncome = 0.0;
         _isSaved = false;
       }
     } catch (e) {
@@ -284,19 +364,119 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
 
   void _addExpense() {
     if (_formKey.currentState!.validate()) {
-      final amount = double.parse(_expenseController.text);
+      String inputText = _expenseController.text.trim();
       final note = _expenseNoteController.text.trim();
       
+      // Check if input starts with + or -
+      bool isAdditionalIncome = inputText.startsWith('+');
+      bool isExpense = inputText.startsWith('-');
+      
+      // Remove the sign for parsing
+      if (isAdditionalIncome || isExpense) {
+        inputText = inputText.substring(1).trim();
+      }
+      
+      final amount = double.parse(inputText);
+      
+      if (amount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid amount greater than 0')),
+        );
+        return;
+      }
+      
       setState(() {
-        _expenses.add({
-          'amount': amount,
-          'note': note.isEmpty ? 'Expense' : note,
-          'timestamp': Timestamp.fromDate(DateTime.now()),
-        });
-        _totalExpenses += amount;
+        if (isAdditionalIncome) {
+          // Add as additional income
+          _additionalIncome.add({
+            'amount': amount,
+            'note': note.isEmpty ? 'Additional Income' : note,
+            'timestamp': Timestamp.fromDate(DateTime.now()),
+          });
+          _totalAdditionalIncome += amount;
+        } else {
+          // Add as expense (with or without - sign)
+          _expenses.add({
+            'amount': amount,
+            'note': note.isEmpty ? 'Expense' : note,
+            'timestamp': Timestamp.fromDate(DateTime.now()),
+          });
+          _totalExpenses += amount;
+        }
         _expenseController.clear();
         _expenseNoteController.clear();
       });
+      
+      // If finance is already saved, update the database immediately
+      if (_isSaved) {
+        _updateFinanceInDatabase();
+      }
+    }
+  }
+
+  Future<void> _updateFinanceInDatabase() async {
+    try {
+      final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
+      final totalIncome = _dailyIncome + _totalAdditionalIncome;
+      final netProfit = totalIncome - _totalExpenses;
+
+      // Convert expenses to Firestore format
+      final expensesForFirestore = _expenses.map((expense) {
+        final expenseMap = Map<String, dynamic>.from(expense);
+        if (expenseMap['timestamp'] is Timestamp) {
+          expenseMap['timestamp'] = expenseMap['timestamp'];
+        } else if (expenseMap['timestamp'] is DateTime) {
+          expenseMap['timestamp'] = Timestamp.fromDate(expenseMap['timestamp'] as DateTime);
+        }
+        return expenseMap;
+      }).toList();
+
+      // Convert additional income to Firestore format
+      final additionalIncomeForFirestore = _additionalIncome.map((income) {
+        final incomeMap = Map<String, dynamic>.from(income);
+        if (incomeMap['timestamp'] is Timestamp) {
+          incomeMap['timestamp'] = incomeMap['timestamp'];
+        } else if (incomeMap['timestamp'] is DateTime) {
+          incomeMap['timestamp'] = Timestamp.fromDate(incomeMap['timestamp'] as DateTime);
+        }
+        return incomeMap;
+      }).toList();
+
+      // Update the database immediately
+      await _firestore.collection('daily_finance').doc(dateId).update({
+        'expenses': expensesForFirestore,
+        'additionalIncome': additionalIncomeForFirestore,
+        'totalExpenses': _totalExpenses,
+        'totalAdditionalIncome': _totalAdditionalIncome,
+        'netProfit': netProfit,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update local updatedAt timestamp
+      final updatedDoc = await _firestore.collection('daily_finance').doc(dateId).get();
+      if (updatedDoc.exists) {
+        final updatedData = updatedDoc.data();
+        if (updatedData != null && updatedData['updatedAt'] != null) {
+          if (updatedData['updatedAt'] is Timestamp) {
+            _updatedAt = updatedData['updatedAt'] as Timestamp;
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {}); // Refresh UI to show updated timestamp
+      }
+    } catch (e) {
+      // If update fails, show error but keep the local changes
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating database: $e'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
@@ -312,55 +492,23 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
 
     // If finance is already saved, update the database immediately
     if (_isSaved) {
-      try {
-        final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
-        final netProfit = _dailyIncome - _totalExpenses;
+      await _updateFinanceInDatabase();
+    }
+  }
 
-        // Convert expenses to Firestore format
-        final expensesForFirestore = _expenses.map((expense) {
-          final expenseMap = Map<String, dynamic>.from(expense);
-          if (expenseMap['timestamp'] is Timestamp) {
-            expenseMap['timestamp'] = expenseMap['timestamp'];
-          } else if (expenseMap['timestamp'] is DateTime) {
-            expenseMap['timestamp'] = Timestamp.fromDate(expenseMap['timestamp'] as DateTime);
-          }
-          return expenseMap;
-        }).toList();
+  Future<void> _removeAdditionalIncome(int index) async {
+    if (index < 0 || index >= _additionalIncome.length) return;
 
-        // Update the database immediately
-        await _firestore.collection('daily_finance').doc(dateId).update({
-          'expenses': expensesForFirestore,
-          'totalExpenses': _totalExpenses,
-          'netProfit': netProfit,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+    final removedAmount = (_additionalIncome[index]['amount'] as num).toDouble();
+    
+    setState(() {
+      _totalAdditionalIncome -= removedAmount;
+      _additionalIncome.removeAt(index);
+    });
 
-        // Update local updatedAt timestamp
-        final updatedDoc = await _firestore.collection('daily_finance').doc(dateId).get();
-        if (updatedDoc.exists) {
-          final updatedData = updatedDoc.data();
-          if (updatedData != null && updatedData['updatedAt'] != null) {
-            if (updatedData['updatedAt'] is Timestamp) {
-              _updatedAt = updatedData['updatedAt'] as Timestamp;
-            }
-          }
-        }
-
-        if (mounted) {
-          setState(() {}); // Refresh UI to show updated timestamp
-        }
-      } catch (e) {
-        // If update fails, show error but keep the local deletion
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error updating database: $e'),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
+    // If finance is already saved, update the database immediately
+    if (_isSaved) {
+      await _updateFinanceInDatabase();
     }
   }
 
@@ -382,9 +530,33 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Income:'),
+                const Text('Income (From App):'),
                 Text(
                   'Rs ${_dailyIncome.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ],
+            ),
+            if (_totalAdditionalIncome > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Additional Income:'),
+                  Text(
+                    'Rs ${_totalAdditionalIncome.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total Income:'),
+                Text(
+                  'Rs ${(_dailyIncome + _totalAdditionalIncome).toStringAsFixed(2)}',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
                 ),
               ],
@@ -406,10 +578,10 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
               children: [
                 const Text('Net Profit:'),
                 Text(
-                  'Rs ${(_dailyIncome - _totalExpenses).toStringAsFixed(2)}',
+                  'Rs ${(_dailyIncome + _totalAdditionalIncome - _totalExpenses).toStringAsFixed(2)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: (_dailyIncome - _totalExpenses) >= 0 ? Colors.blue : Colors.orange,
+                    color: (_dailyIncome + _totalAdditionalIncome - _totalExpenses) >= 0 ? Colors.blue : Colors.orange,
                   ),
                 ),
               ],
@@ -451,7 +623,8 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
     setState(() => _isSaving = true);
     try {
       final dateId = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final netProfit = _dailyIncome - _totalExpenses;
+      final totalIncome = _dailyIncome + _totalAdditionalIncome;
+      final netProfit = totalIncome - _totalExpenses;
 
       // Convert expenses to Firestore format (ensure timestamps are proper)
       final expensesForFirestore = _expenses.map((expense) {
@@ -463,6 +636,17 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
           expenseMap['timestamp'] = Timestamp.fromDate(expenseMap['timestamp'] as DateTime);
         }
         return expenseMap;
+      }).toList();
+
+      // Convert additional income to Firestore format
+      final additionalIncomeForFirestore = _additionalIncome.map((income) {
+        final incomeMap = Map<String, dynamic>.from(income);
+        if (incomeMap['timestamp'] is Timestamp) {
+          incomeMap['timestamp'] = incomeMap['timestamp'];
+        } else if (incomeMap['timestamp'] is DateTime) {
+          incomeMap['timestamp'] = Timestamp.fromDate(incomeMap['timestamp'] as DateTime);
+        }
+        return incomeMap;
       }).toList();
 
       // Get existing savedAt if updating (preserve original save time)
@@ -482,6 +666,8 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
           _selectedDate.day,
         )),
         'income': _dailyIncome,
+        'additionalIncome': additionalIncomeForFirestore,
+        'totalAdditionalIncome': _totalAdditionalIncome,
         'expenses': expensesForFirestore,
         'totalExpenses': _totalExpenses,
         'netProfit': netProfit,
@@ -553,7 +739,8 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
 
   @override
   Widget build(BuildContext context) {
-    final netProfit = _dailyIncome - _totalExpenses;
+    final totalIncome = _dailyIncome + _totalAdditionalIncome;
+    final netProfit = totalIncome - _totalExpenses;
 
     return Scaffold(
       appBar: AppBar(
@@ -699,7 +886,7 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'Rs ${_dailyIncome.toStringAsFixed(2)}',
+                                          'Rs ${totalIncome.toStringAsFixed(2)}',
                                           style: const TextStyle(
                                             fontSize: 22,
                                             fontWeight: FontWeight.bold,
@@ -835,6 +1022,46 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                                 color: Colors.green,
                               ),
                             ),
+                            if (_totalAdditionalIncome > 0) ...[
+                              const SizedBox(height: 12),
+                              const Divider(),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Additional Income',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Rs ${_totalAdditionalIncome.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Divider(),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Total Income',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Rs ${totalIncome.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -849,28 +1076,63 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Add Expense',
+                              'Add Expense / Additional Income',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.info_outline, size: 20, color: Colors.blue.shade700),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Use "+" for additional income, "-" or no sign for expense',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 16),
                             TextFormField(
                               controller: _expenseController,
                               decoration: const InputDecoration(
-                                labelText: 'Expense Amount (Rs)',
+                                labelText: 'Amount (Rs) - Use + for income, - for expense',
                                 border: OutlineInputBorder(),
                                 prefixText: 'Rs ',
+                                hintText: 'e.g., +100 or -50 or 50',
                               ),
-                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              keyboardType: TextInputType.text,
+                              inputFormatters: [
+                                SignedDecimalTextInputFormatter(),
+                              ],
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter amount';
                                 }
-                                final amount = double.tryParse(value);
+                                String inputText = value.trim();
+                                // Check if input starts with + or -
+                                bool hasSign = inputText.startsWith('+') || inputText.startsWith('-');
+                                // Remove the sign for parsing
+                                if (hasSign) {
+                                  inputText = inputText.substring(1).trim();
+                                }
+                                final amount = double.tryParse(inputText);
                                 if (amount == null || amount <= 0) {
-                                  return 'Please enter valid amount';
+                                  return 'Please enter valid amount greater than 0';
                                 }
                                 return null;
                               },
@@ -879,9 +1141,9 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                             TextFormField(
                               controller: _expenseNoteController,
                               decoration: const InputDecoration(
-                                labelText: 'Expense Note (Optional)',
+                                labelText: 'Note (Optional)',
                                 border: OutlineInputBorder(),
-                                hintText: 'e.g., Electricity, Rent, Supplies',
+                                hintText: 'e.g., Electricity, Rent, Bonus, Tips',
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -890,7 +1152,7 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                               child: ElevatedButton.icon(
                                 onPressed: _addExpense,
                                 icon: const Icon(Icons.add),
-                                label: const Text('Add Expense'),
+                                label: const Text('Add'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.orange,
                                   foregroundColor: Colors.white,
@@ -941,6 +1203,58 @@ class DailyFinancePageState extends State<DailyFinancePage> with WidgetsBindingO
                                         IconButton(
                                           icon: const Icon(Icons.delete, color: Colors.red),
                                           onPressed: () => _removeExpense(index),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Additional Income List
+                    if (_additionalIncome.isNotEmpty) ...[
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Additional Income List',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ...List.generate(_additionalIncome.length, (index) {
+                                final income = _additionalIncome[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  color: Colors.green.shade50,
+                                  child: ListTile(
+                                    title: Text(income['note'] ?? 'Additional Income'),
+                                    subtitle: Text(
+                                      _formatExpenseTimestamp(income['timestamp']),
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Rs ${(income['amount'] as num).toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.red),
+                                          onPressed: () => _removeAdditionalIncome(index),
                                         ),
                                       ],
                                     ),
